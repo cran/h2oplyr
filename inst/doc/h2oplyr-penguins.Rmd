@@ -1,0 +1,618 @@
+---
+title: "Manipulating penguin data à la dplyr with H2O"
+author: "Carlos Ortega"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Manipulating penguin data à la dplyr with H2O}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+library(h2oplyr)
+port <- Sys.getenv("H2OPLYR_VIGNETTE_PORT")
+if (nzchar(port)) {
+  h2o::h2o.init(ip = "127.0.0.1", port = as.integer(port), startH2O = FALSE)
+}
+connected <- h2o_available()
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = connected)
+if (connected) h2o::h2o.no_progress()
+```
+
+
+<style>
+.header-section-number::after, .toc-section-number::after { content: "."; }
+body { max-width: 1040px; margin: 0 auto; padding: 48px 36px 80px; background: #fff;
+  color: #243b4a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px; line-height: 1.7; }
+h1.title { color: #133d4a; font-size: 42px; line-height: 1.13; letter-spacing: -1.1px;
+  border-top: 7px solid #167d8d; padding-top: 24px; margin-bottom: 18px; }
+h2 { color: #133d4a; font-size: 26px; border-bottom: 1px solid #cbdde2;
+  padding-bottom: 12px; margin-top: 56px; }
+h3 { color: #167080; } a { color: #126e81; }
+#TOC { background: #eff6f8; border: 1px solid #d6e5e9; border-radius: 12px;
+  padding: 20px 26px; margin: 28px 0 36px; font-size: 14px; }
+#TOC ul { columns: 2; column-gap: 28px; padding-left: 18px; }
+#TOC li { break-inside: avoid; padding: 3px 0; }
+pre { background: #f3f6f8; border: 1px solid #dce5e9; border-radius: 9px;
+  padding: 16px; font-size: 13px; line-height: 1.65; overflow-x: auto; }
+code { color: #155064; background: #f0f5f7; overflow-wrap: anywhere; }
+pre code { overflow-wrap: normal; }
+.result { margin: 22px 0; border: 1px solid #cbdde2; border-radius: 12px;
+  padding: 20px; background: #fff; }
+.result h3 { margin: 0 0 6px; font-size: 18px; }
+.result-meta { font-size: 13px; color: #586d78; margin: 0 0 16px; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
+th { background: #eaf3f5; color: #174c5c; text-align: left; font-weight: 650; }
+th, td { border-bottom: 1px solid #dce6e9; padding: 11px 12px; vertical-align: top; }
+tbody tr:nth-child(even) { background: #f7fafb; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.missing { color: #926022; font-style: italic; }
+.check { color: #275d43; background: #edf6ef; border-left: 4px solid #477c58;
+  padding: 10px 15px; margin: 16px 0; font-size: 14px; }
+.caja-clave, .caja-recordatorio, .caja-aviso, .caja-limite { padding: 17px 21px;
+  margin: 26px 0; border-radius: 9px; border-left: 5px solid; }
+.caja-clave { background: #edf6fa; border-color: #0f6c8d; }
+.workflow { background: #e8f3f5; color: #174c5c; border-left: 6px solid #167d8d;
+  border-radius: 9px; padding: 18px 23px; margin: 26px 0; font-size: 17px; }
+.workflow p { margin: 5px 0; }
+.caja-recordatorio { background: #f3f8e8; border-color: #5f7f22; }
+.caja-aviso { background: #fff4e8; border-color: #c96b00; }
+.caja-limite { background: #fff0f2; border-color: #a83f52; }
+details { border: 1px solid #d6e2e7; border-radius: 9px; padding: 14px 18px; margin: 22px 0; }
+summary { cursor: pointer; font-weight: 650; color: #195266; }
+@media(max-width: 700px) { body { padding: 24px 16px; } h1.title { font-size: 32px; }
+  #TOC ul { columns: 1; } .result { padding: 12px; } th,td { padding: 8px; } }
+@media print { body { max-width: none; padding: 0; } .result, .check { break-inside: avoid; }
+  #TOC { display: none; } }
+</style>
+
+## What this package does
+
+`h2oplyr` provides familiar transformation verbs while keeping the observations
+inside an H2O cluster. The **only external runtime dependency is `h2o`**.
+The `tidytable` API inspires parts of the interface, but neither `tidytable` nor
+`dplyr` participates in a calculation. `knitr` and `rmarkdown` are optional
+**documentation-building** dependencies.
+
+::: {.workflow}
+**The workflow is:**
+
+CSV file → H2OFrame → h2o_tbl → remote operations → H2OFrame
+:::
+
+An `h2o_tbl` is a small R object containing a remote frame handle and grouping
+column names. R assembles expressions and inspects metadata; H2O processes the
+rows. Scalar reductions and category domains can reach R, but no transformation
+uses a local data frame, matrix or vector as its computational backend.
+For display only, the previews below request a few scalar values and categorical
+labels. Displaying a value necessarily brings that value to the reader; it does
+not change where selection, aggregation, joins and reshaping run.
+
+This tutorial is for R users familiar with selecting columns, filtering rows and
+grouping data. You will learn to inspect remote results, handle missing values,
+check joins and verify a reshape round trip. Java and a matching H2O client/server
+are the only external runtime requirements.
+
+This tutorial uses measurements of 344 penguins from three species in the Palmer
+Archipelago, collected during 2007–2009. The CSV is included in the package,
+so examples do not depend on a future download or a `palmerpenguins` installation.
+
+
+| Practical question | Tools used below | Visible evidence |
+|:--|:--|:--|
+| Which variables and rows do I need? | `h_select()`, `h_filter()`, `h_drop_na()` | Values, column names and row counts |
+| How do I derive and summarize measurements? | `h_mutate()`, `h_summarize()`, `h_across()` | Derived units and species means |
+| Can I combine and reshape without losing information? | `h_left_join()`, pivot verbs | Preserved row counts and matching values |
+| How do ordering and sampling affect the result? | Slice verbs, `h_arrange()`, `h_lag()` | Sample rows, tied maxima and lag values |
+
+::: {.caja-clave}
+**Reading the examples.** Each transformation is followed by values returned
+from H2O and a green check based on an executed assertion. A preview is a small
+window into the result; the caption reports the full result dimensions.
+:::
+
+## Connect once, then import
+
+Install the package archive using `install.packages(path, repos = NULL,
+type = "source")` after installing `h2o`. Start a matching H2O server explicitly:
+
+```{r connect-instructions, eval=FALSE}
+# Run this yourself, once per session. Loading h2oplyr never starts a server.
+h2o::h2o.init(nthreads = 2, max_mem_size = "2G")
+library(h2oplyr)
+```
+
+
+<details>
+<summary>How the result previews work — complete rendering code</summary>
+
+These helpers belong to this vignette, not to the package API. `preview_h2o()`
+accepts a remote table, a title, a few column names and a row limit (at most six).
+It prints HTML and returns no local analytical table. Numbers use scalar H2O
+reductions; text uses the categorical domain of a single selected value. H2O
+may internally cache small metadata previews. This is a deliberately small,
+slow display routine, not a data export facility. `verify_output()` stops the
+render if its condition fails. All helpers are defined here before their first use.
+
+```{r display-helpers}
+# Escape labels before placing them inside HTML.
+html_text <- function(x) {
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  gsub(">", "&gt;", x, fixed = TRUE)
+}
+
+# Show bounded remote values without creating a local data.frame.
+preview_h2o <- function(x, title, columns = names(as_h2o(x)), rows = 4L) {
+  frame <- as_h2o(x)
+  stopifnot(inherits(frame, "H2OFrame"), rows >= 1L, rows <= 6L,
+            all(columns %in% names(frame)))
+  types <- unlist(h2o::h2o.getTypes(frame[, columns]), use.names = FALSE)
+  shown <- min(rows, nrow(frame))
+  cat('\n<div class="result"><h3>', html_text(title), '</h3>', sep = "")
+  cat('<p class="result-meta">H2OFrame · ', nrow(frame), ' rows × ',
+      ncol(frame), ' columns · showing ', shown, ' rows and ',
+      length(columns), ' columns</p><div class="table-scroll"><table><thead><tr>',
+      sep = "")
+  for (j in seq_along(columns)) {
+    alignment <- if (types[j] %in% c("int", "real")) ' class="num"' else ""
+    cat('<th scope="col"', alignment, '>', html_text(columns[j]), '</th>', sep = "")
+  }
+  cat('</tr></thead><tbody>')
+  for (i in seq_len(shown)) {
+    cat('<tr>')
+    for (j in seq_along(columns)) {
+      # Two-step indexing keeps the cell as a remote frame in H2O.
+      cell <- frame[i, ][, columns[j]]
+      stopifnot(inherits(cell, "H2OFrame"))
+      numeric_column <- types[j] %in% c("int", "real")
+      alignment <- if (numeric_column) ' class="num"' else ""
+      if (h2o::h2o.sum(is.na(cell)) == 1) {
+        value <- '<span class="missing">NA</span>'
+      } else if (numeric_column) {
+        number <- h2o::h2o.sum(cell)
+        value <- if (number == floor(number)) sprintf("%.0f", number) else sprintf("%.2f", number)
+      } else {
+        # Re-encode in H2O so the domain contains only this cell's label.
+        label <- h2o::h2o.levels(h2o::h2o.asfactor(h2o::h2o.ascharacter(cell)))
+        stopifnot(length(label) == 1L)
+        value <- html_text(as.character(label[[1L]]))
+      }
+      cat('<td', alignment, '>', value, '</td>', sep = "")
+    }
+    cat('</tr>')
+  }
+  cat('</tbody></table></div></div>\n\n')
+  invisible(NULL)
+}
+
+# Only a successful, evaluated assertion receives a green check.
+verify_output <- function(condition, label) {
+  stopifnot(isTRUE(condition))
+  cat('\n<p class="check"><strong>Verified.</strong> ', html_text(label), '</p>\n\n', sep = "")
+}
+```
+
+</details>
+
+```{r import}
+# Import the bundled CSV and confirm its dimensions.
+penguins <- h_penguins()
+stopifnot(nrow(as_h2o(penguins)) == 344)
+
+```
+
+```{r import-output, echo=FALSE, results="asis"}
+preview_h2o(penguins, "The imported penguins", c("species", "island", "bill_length_mm", "body_mass_g"))
+verify_output(nrow(as_h2o(penguins)) == 344 && ncol(as_h2o(penguins)) == 8, "344 observations and 8 variables imported into H2O.")
+```
+
+`h_penguins()` uploads the local CSV through `h2o.uploadFile()` and declares
+`"NA"` as missing in every column. Species, island and sex are categorical;
+measurements are numeric. For your own files, upload directly with
+`h2o::h2o.uploadFile()` and wrap the returned frame with `h2o_tbl()`.
+
+The default table printer displays metadata only. This vignette adds bounded
+value previews so you can inspect the results directly. `h_collect(penguins)`
+and `as_h2o(penguins)` both return the **remote H2OFrame**, preserving the backend
+contract. This is an intentional change from the original standalone prototype.
+
+The eight variables are species, island, bill length and depth (mm), flipper
+length (mm), body mass (g), sex and year. A missing measurement appears as `NA`,
+not as zero. The same penguin can have one measurement missing and others present.
+
+::: {.caja-clave}
+**Recognize the object.** The result is an `H2OFrame` wrapped by `h2o_tbl`.
+The small HTML table above is a display of selected values, not a new data backend.
+:::
+
+## Select only the columns needed
+
+```{r select}
+# Keep relevant columns, then rename and order the bill measurements.
+bills <- h_select(penguins, species, starts_with("bill_"))
+measurements <- h_select(penguins, where(is.numeric))
+renamed <- h_rename(bills, bill_length = bill_length_mm)
+relocated <- h_relocate(renamed, species, .before = bill_length)
+```
+
+```{r select-output, echo=FALSE, results="asis"}
+preview_h2o(bills, "Selected bill measurements")
+preview_h2o(measurements, "Numeric variables", rows = 3)
+preview_h2o(relocated, "Renamed and relocated columns")
+verify_output(identical(names(as_h2o(bills)), c("species", "bill_length_mm", "bill_depth_mm")) &&
+  identical(names(as_h2o(relocated)), c("species", "bill_length", "bill_depth_mm")),
+  "Selection, renaming and final column order match the requested schema.")
+```
+
+Selection operates on column names and H2O schema types. `where()` supports the
+base predicates `is.numeric`, `is.character` and `is.factor`; arbitrary predicates
+are deliberately rejected. `all_of()` requires every requested column, while
+`any_of()` allows absent names. Ranges such as `species:island` and exclusions
+such as `-year` are supported. A grouped selection retains its grouping columns.
+
+::: {.caja-clave}
+**Takeaway.** Selection changes the schema, not the observations. All three previews retain the original 344 rows.
+:::
+
+## Missing values and filtering
+
+```{r missing}
+# Compare complete-case filtering with two measurement thresholds.
+complete_penguins <- h_drop_na(penguins)
+stopifnot(nrow(as_h2o(complete_penguins)) == 333)
+cat("Complete observations:", nrow(as_h2o(complete_penguins)), "\n")
+large <- h_filter(penguins, body_mass_g >= 5000)
+cat("Penguins weighing at least 5000 g:", nrow(as_h2o(large)), "\n")
+bill_range <- h_filter(penguins, h_between(bill_length_mm, 40, 50))
+cat("Penguins with bill length from 40 to 50 mm:", nrow(as_h2o(bill_range)), "\n")
+```
+
+```{r missing-output, echo=FALSE, results="asis"}
+preview_h2o(complete_penguins, "Complete cases", c("species", "bill_length_mm", "body_mass_g", "sex"))
+preview_h2o(large, "Body mass of at least 5,000 g", c("species", "body_mass_g"))
+preview_h2o(bill_range, "Bill length between 40 and 50 mm", c("species", "bill_length_mm"))
+verify_output(nrow(as_h2o(complete_penguins)) == 333 &&
+  h2o::h2o.min(as_h2o(large)[, "body_mass_g"]) >= 5000 &&
+  h2o::h2o.min(as_h2o(bill_range)[, "bill_length_mm"]) >= 40 &&
+  h2o::h2o.max(as_h2o(bill_range)[, "bill_length_mm"]) <= 50,
+  "Complete-case count and both filter boundaries checked over the full remote results.")
+```
+
+A missing filter condition is dropped. The expression interpreter propagates
+missing comparisons explicitly, because H2O's raw comparison behavior can differ
+from R's. `h_filter_out()` negates the combined predicate and also drops missing
+conditions. Use `is.na()` when you intend to select missing measurements.
+
+```{r missing-explicit}
+# Select the missing body masses explicitly.
+missing_mass <- h_filter(penguins, is.na(body_mass_g))
+stopifnot(nrow(as_h2o(missing_mass)) == 2)
+```
+
+```{r missing-explicit-output, echo=FALSE, results="asis"}
+preview_h2o(missing_mass, "The two missing body masses", c("species", "bill_length_mm", "body_mass_g"))
+verify_output(h2o::h2o.sum(is.na(as_h2o(missing_mass)[, "body_mass_g"])) == 2,
+  "Both retained rows have a missing body mass.")
+```
+
+Dropping all incomplete rows yields 333 penguins, whereas a mass-only analysis
+can retain 342. Those are different analysis populations. Replacing missing body
+mass with zero would invent a biologically impossible measurement, so this
+tutorial removes missing mass only where it is needed.
+
+::: {.caja-clave}
+**Takeaway.** Choose the missing-data rule for the question: requiring every variable to be complete removes more rows than requiring body mass alone.
+:::
+
+## Derive columns without moving observations
+
+```{r mutate}
+# Drop only missing mass, then derive units and a mass category.
+prepared <- penguins |>
+  h_drop_na(body_mass_g) |>
+  h_mutate(
+    mass_kg = body_mass_g / 1000,
+    mass_band = h_case_when(
+      body_mass_g >= 5000 ~ "large",
+      body_mass_g >= 3500 ~ "medium",
+      TRUE ~ "small"
+    )
+  )
+stopifnot(nrow(as_h2o(prepared)) == 342)
+cat("Total measured mass (kg):",
+    h2o::h2o.sum(as_h2o(prepared)[, "mass_kg"]), "\n")
+```
+
+```{r mutate-output, echo=FALSE, results="asis"}
+preview_h2o(prepared, "Mass in grams, kilograms and bands", c("species", "body_mass_g", "mass_kg", "mass_band"))
+verify_output(nrow(as_h2o(prepared)) == 342 &&
+  h2o::h2o.max(abs(as_h2o(prepared)[, "mass_kg"] * 1000 - as_h2o(prepared)[, "body_mass_g"])) < 1e-8,
+  "342 measured masses retained; the kg-to-g conversion agrees for every row.")
+```
+
+Named mutations run sequentially, so a later expression can use a newly created
+column. Arithmetic, comparisons, selected H2O mathematical and text functions,
+and the package's vector helpers are supported. Calls to arbitrary R functions
+or other package namespaces raise an error. `h_transmute()` retains only the
+new named columns. Grouped mutation is not implemented: ungroup explicitly
+rather than accidentally calculate a global value inside a group.
+
+The native `|>` pipe and the package's `%.%` pipe can both chain these verbs.
+
+::: {.caja-clave}
+**Takeaway.** Read the derived columns side by side. The numerical assertion checks every measured mass, not just the displayed rows.
+:::
+
+## Summarize by species
+
+```{r summaries}
+# Compute counts and means inside H2O, grouped by species.
+by_species <- h_summarize(
+  penguins,
+  observations = n(),
+  mean_mass_g = mean(body_mass_g, na.rm = TRUE),
+  mean_bill_mm = mean(bill_length_mm, na.rm = TRUE),
+  .by = species
+)
+```
+
+```{r summary-results, echo=FALSE, results="asis"}
+preview_h2o(h_arrange(by_species, species), "Species-level summary", rows = 3)
+verify_output(nrow(as_h2o(by_species)) == 3 &&
+  h2o::h2o.sum(as_h2o(by_species)[, "observations"]) == 344,
+  "Three groups account for all 344 observations.")
+```
+
+The output has one row per species. `n()` counts all observations; each mean
+removes missing values independently. Gentoo penguins have the highest mean
+body mass in this sample. This is a descriptive comparison, not a causal effect
+of species or island.
+
+`.by` applies grouping to this call only. The equivalent persistent grouping form
+is `h_group_by(penguins, species) |> h_summarize(...)`; summaries themselves return
+ungrouped results. `.add = TRUE` adds grouping columns, and `h_group_vars()`
+reports the current grouping metadata.
+
+Supported reductions are `n()`, `n_distinct(column)`, `sum`, `mean`, `min`, `max`,
+`sd`, `var` and `median`. Each reduction takes a column, optionally with `na.rm`.
+Create transformed columns with `h_mutate()` before aggregating. The adapter
+rejects empty-input summaries explicitly.
+
+::: {.caja-clave}
+**Takeaway.** Group sizes count penguins, while each mean uses its own non-missing measurements. A group count is not necessarily the denominator of every mean.
+:::
+
+## Transform several columns consistently
+
+```{r across}
+# Apply unit conversion and grouped means to multiple columns.
+scaled <- h_mutate(
+  bills,
+  h_across(starts_with("bill_"), list(cm = function(z) z / 10))
+)
+average_bills <- bills |>
+  h_drop_na() |>
+  h_group_by(species) |>
+  h_summarize_across(starts_with("bill_"), list(average = mean))
+```
+
+```{r across-output, echo=FALSE, results="asis"}
+preview_h2o(scaled, "Millimetres converted to centimetres", c("species", "bill_length_mm", "bill_length_mm_cm", "bill_depth_mm_cm"))
+preview_h2o(h_arrange(average_bills, species), "Mean bill measurements by species", rows = 3)
+verify_output(h2o::h2o.max(abs(as_h2o(scaled)[, "bill_length_mm_cm"] * 10 - as_h2o(scaled)[, "bill_length_mm"]), na.rm = TRUE) < 1e-8 &&
+  nrow(as_h2o(average_bills)) == 3, "Across conversion and the three grouped summaries checked.")
+```
+
+`h_across()` builds column expressions with names such as `bill_length_mm_cm`.
+The one-argument function body is interpreted through the same remote expression
+rules as `h_mutate()`. Summary function identity is used, so an alias such as
+`average = mean` still computes the mean. Across summaries default to
+`na.rm = FALSE`; this example deliberately removes missing bill measurements
+first. The standalone `h_mutate_across()` wrapper is retained for compatibility.
+
+::: {.caja-clave}
+**Takeaway.** Across applies the same expression to several columns; the suffix records the transformation or summary that produced each output.
+:::
+
+## Join summaries back to observations
+
+```{r joins}
+# Attach a unique species summary to each observed mass.
+enriched <- h_left_join(
+  prepared, by_species,
+  by = "species", relationship = "many-to-one"
+)
+stopifnot(nrow(as_h2o(enriched)) == nrow(as_h2o(prepared)))
+enriched <- h_mutate(enriched, mass_minus_species_mean = body_mass_g - mean_mass_g)
+```
+
+```{r joins-output, echo=FALSE, results="asis"}
+preview_h2o(h_arrange(enriched, species, body_mass_g), "Observed mass versus its species mean",
+  c("species", "body_mass_g", "mean_mass_g", "mass_minus_species_mean"))
+verify_output(nrow(as_h2o(enriched)) == 342 &&
+  h2o::h2o.sum(is.na(as_h2o(enriched)[, "mean_mass_g"])) == 0,
+  "The join preserves all 342 measured penguins and matches a species mean to each.")
+```
+
+The relationship check ensures the right table has at most one record per
+species, preventing accidental multiplication of penguin rows. Inner, left,
+right and full equijoins are available. `h_semi_join()` selects left rows with a
+match; `h_anti_join()` selects those without one. Named keys map different column
+names, for example `by = c(species = "species_code")`.
+
+A full join is implemented using a left join plus unmatched right rows, all
+inside H2O. Missing-key matching follows H2O, and join row order is unspecified.
+Always use `h_arrange()` when subsequent calculations depend on ordering.
+
+::: {.caja-clave}
+**Takeaway.** A valid many-to-one join must preserve the left row count. Sorting the preview makes it readable; join order itself is unspecified.
+:::
+
+## Reshape measurements from wide to long and back
+
+```{r reshape}
+# Use species-level summaries so the ID is naturally unique.
+wide <- h_summarize(
+  penguins,
+  bill_length_mm = mean(bill_length_mm, na.rm = TRUE),
+  bill_depth_mm = mean(bill_depth_mm, na.rm = TRUE),
+  .by = species
+)
+long <- h_pivot_longer(
+  wide, starts_with("bill_"),
+  names_to = "measurement", values_to = "mean_mm"
+)
+stopifnot(nrow(as_h2o(long)) == 6)
+restored <- h_pivot_wider(long, measurement, mean_mm)
+stopifnot(nrow(as_h2o(restored)) == 3)
+```
+
+```{r reshape-output, echo=FALSE, results="asis"}
+preview_h2o(h_arrange(wide, species), "Before pivoting: one row per species", rows = 3)
+preview_h2o(h_arrange(long, species, measurement), "Long format: one row per measurement", rows = 6)
+preview_h2o(h_arrange(restored, species), "Back to wide format", rows = 3)
+wide_sorted <- as_h2o(h_arrange(wide, species))
+restored_sorted <- as_h2o(h_arrange(restored, species))
+verify_output(nrow(as_h2o(long)) == 6 && nrow(restored_sorted) == 3 &&
+  h2o::h2o.max(abs(wide_sorted[, "bill_length_mm"] - restored_sorted[, "bill_length_mm"])) < 1e-8 &&
+  h2o::h2o.max(abs(wide_sorted[, "bill_depth_mm"] - restored_sorted[, "bill_depth_mm"])) < 1e-8,
+  "Wide → long → wide preserves both mean measurements for every species.")
+```
+
+The long result contains six species/measurement combinations. Widening gets the
+output names from the remote categorical domain and combines values with remote
+joins. Repeated ID/name combinations are rejected: decide on an aggregation
+before reshaping. This avoids silently choosing one measurement or creating a
+local list-column. `values_fill` replaces missing result cells, including
+explicitly missing input values.
+
+For text transformations, `h_separate()` uses H2O regular-expression splitting.
+`h_unite()` uses H2O categorical interaction with encoded original underscores;
+its current separator cannot contain dollar signs or backslashes. High-cardinality
+interaction domains can consume substantial cluster memory.
+
+::: {.caja-clave}
+**Takeaway.** The round-trip check compares both measurements across all species. Matching row counts alone would not prove that the values survived.
+:::
+
+## Sampling, ties and order-dependent calculations
+
+```{r sampling}
+# Sample reproducibly, retain tied maxima and compute a sorted lag.
+sample_penguins <- h_slice_sample(prepared, n = 12, seed = 2026)
+stopifnot(nrow(as_h2o(sample_penguins)) == 12)
+heaviest <- h_slice_max(prepared, body_mass_g, n = 3, with_ties = TRUE)
+cat("Rows among the three heaviest positions, including ties:",
+    nrow(as_h2o(heaviest)), "\n")
+ordered <- h_arrange(prepared, body_mass_g)
+ordered <- h_mutate(ordered, previous_mass = h_lag(body_mass_g))
+```
+
+```{r sampling-output, echo=FALSE, results="asis"}
+preview_h2o(sample_penguins, "A seeded sample of 12 penguins", c("species", "body_mass_g", "bill_length_mm"))
+preview_h2o(h_arrange(heaviest, desc(body_mass_g)), "The heaviest positions, including ties", c("species", "body_mass_g"), rows = 6)
+preview_h2o(ordered, "Previous mass after sorting", c("species", "body_mass_g", "previous_mass"))
+ordered_frame <- as_h2o(ordered)
+first_lag <- ordered_frame[1, ][, "previous_mass"]
+verify_output(nrow(as_h2o(sample_penguins)) == 12 && h2o::h2o.sum(is.na(first_lag)) == 1 &&
+  h2o::h2o.max(abs(ordered_frame[2:nrow(ordered_frame), ][, "previous_mass"] -
+    ordered_frame[1:(nrow(ordered_frame)-1), ][, "body_mass_g"])) < 1e-8,
+  "Sample size is 12; the first lag is missing and every later lag matches the preceding mass.")
+```
+
+Sampling uses H2O random columns. Sampling with replacement creates draw indices
+in H2O and joins them to rows. With `seed = NULL` (the default), no seed is
+passed to H2O; supply a seed explicitly when reproducibility is needed.
+Identical seeds are reproducible on the same frame
+and cluster layout; they are not a promise of identical samples across versions
+or distributed layouts. `with_ties = TRUE` can return more than `n` rows.
+
+Lag, lead, cumulative operations and `h_fill()` use current row order. Penguins
+are not a longitudinal time series: the lag example illustrates an ordered
+comparison, not a temporal interpretation. Grouped windows and grouped slicing
+are rejected in this release.
+
+::: {.caja-clave}
+**Takeaway.** A seeded sample is reproducible within the documented setting. A lag is meaningful only after choosing an order; penguins here are not a longitudinal panel.
+:::
+
+## Validation and current boundaries
+
+Every exported function has an executable example with an assertion. The package
+also includes regression tests for missing values, aggregation, ties, empty
+slices, join multiplicity, invalid expressions and input preservation. Integration
+tests compare H2O function bindings before and after execution without modifying
+the H2O namespace. A static audit rejects local-table calls in package functions.
+Additional maintainer-only download instrumentation is kept outside the package.
+
+Run all examples and regressions against a cluster you started explicitly:
+
+```{r testing-instructions, eval=FALSE}
+h2o::h2o.init(nthreads = 2, max_mem_size = "2G")
+library(h2oplyr)
+source(system.file("examples", "examples.R", package = "h2oplyr"))
+for (nm in names(examples)) eval(examples[[nm]])
+source(system.file("examples", "regressions.R", package = "h2oplyr"))
+```
+
+This package is an explicit subset of tidy-style manipulation, not a complete
+drop-in replacement for `dplyr` or `tidytable`. It has no local rowwise/map backend,
+non-equality joins, automatic list-column nesting, arbitrary R callbacks, grouped
+mutation or implicit duplicate-cell pivot aggregation. `h_bind_rows()` requires
+matching column-name sets. `h_nest_by()` returns a list of remote group handles
+and is intended for a modest number of groups.
+
+When no cluster is connected, rebuilding this vignette retains the code but
+skips H2O execution. The distributed HTML was built against an explicitly
+connected server. The package never starts or shuts down a user's cluster while
+loading, printing, or running its ordinary examples.
+
+
+## Reproduce and interpret the checks
+
+The green checks accompany the tutorial's calculations. The installed package
+also contains 73 asserted API examples and semantic regression tests; those are
+a separate suite, not 73 examples all reproduced on this page. The commands in
+“Connect once” and “Validation” are instructions to run yourself, rather than
+claims that this HTML launched a cluster or reran the complete package test suite.
+
+```{r execution-summary, echo=FALSE, results="asis", eval=TRUE}
+if (connected) {
+  cat('<p class="check"><strong>Executed with H2O.</strong> R ',
+      as.character(getRversion()), '; h2oplyr ', as.character(packageVersion("h2oplyr")),
+      '; h2o ', as.character(packageVersion("h2o")),
+      '. All tutorial assertions completed during rendering.</p>\n', sep = "")
+} else {
+  cat('<p class="caja-aviso"><strong>Code-only rebuild.</strong> No H2O server was connected. ',
+      'The transformation chunks and their previews were skipped; no successful execution is claimed.</p>\n')
+}
+```
+
+Try changing the mass threshold or selecting another species, then rerun the
+section and inspect both the values and the assertion. Do not infer a successful
+transformation merely from seeing an object name or from a silent `stopifnot()`.
+
+## Short glossary
+
+- **H2OFrame:** data stored in an H2O cluster, accessed through an R handle.
+- **h2o_tbl:** the package wrapper around that handle and grouping metadata.
+- **Preview:** a small display of remote values; its caption reports the full dimensions.
+- **NA:** a missing value, distinct from a zero measurement.
+- **Assertion:** a condition that must hold; a failure stops the document build.
+- **Many-to-one join:** each left key can match at most one right-hand record.
+
+## Data provenance
+
+Data: Horst AM, Hill AP, Gorman KB (2020), *palmerpenguins: Palmer Archipelago
+(Antarctica) penguin data*, [doi:10.5281/zenodo.3960218](https://doi.org/10.5281/zenodo.3960218).
+The data are available under CC0. Measurements were collected by Kristen Gorman
+and Palmer Station LTER. The research description is Gorman KB, Williams TD,
+Fraser WR (2014), [doi:10.1371/journal.pone.0090081](https://doi.org/10.1371/journal.pone.0090081).
+The bundled CSV's source, retrieval date and SHA-256 are recorded in
+`system.file("extdata", "PROVENANCE.md", package = "h2oplyr")`.

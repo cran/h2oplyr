@@ -1,0 +1,2337 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Carlos Ortega" />
+
+
+<title>Manipulating penguin data à la dplyr with H2O</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Manipulating penguin data à la dplyr with
+H2O</h1>
+<h4 class="author">Carlos Ortega</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#what-this-package-does" id="toc-what-this-package-does"><span class="toc-section-number">1</span> What this package does</a></li>
+<li><a href="#connect-once-then-import" id="toc-connect-once-then-import"><span class="toc-section-number">2</span> Connect once, then import</a></li>
+<li><a href="#select-only-the-columns-needed" id="toc-select-only-the-columns-needed"><span class="toc-section-number">3</span> Select only the columns
+needed</a></li>
+<li><a href="#missing-values-and-filtering" id="toc-missing-values-and-filtering"><span class="toc-section-number">4</span> Missing values and
+filtering</a></li>
+<li><a href="#derive-columns-without-moving-observations" id="toc-derive-columns-without-moving-observations"><span class="toc-section-number">5</span> Derive columns without moving
+observations</a></li>
+<li><a href="#summarize-by-species" id="toc-summarize-by-species"><span class="toc-section-number">6</span> Summarize by species</a></li>
+<li><a href="#transform-several-columns-consistently" id="toc-transform-several-columns-consistently"><span class="toc-section-number">7</span> Transform several columns
+consistently</a></li>
+<li><a href="#join-summaries-back-to-observations" id="toc-join-summaries-back-to-observations"><span class="toc-section-number">8</span> Join summaries back to
+observations</a></li>
+<li><a href="#reshape-measurements-from-wide-to-long-and-back" id="toc-reshape-measurements-from-wide-to-long-and-back"><span class="toc-section-number">9</span> Reshape measurements from wide to
+long and back</a></li>
+<li><a href="#sampling-ties-and-order-dependent-calculations" id="toc-sampling-ties-and-order-dependent-calculations"><span class="toc-section-number">10</span> Sampling, ties and order-dependent
+calculations</a></li>
+<li><a href="#validation-and-current-boundaries" id="toc-validation-and-current-boundaries"><span class="toc-section-number">11</span> Validation and current
+boundaries</a></li>
+<li><a href="#reproduce-and-interpret-the-checks" id="toc-reproduce-and-interpret-the-checks"><span class="toc-section-number">12</span> Reproduce and interpret the
+checks</a></li>
+<li><a href="#short-glossary" id="toc-short-glossary"><span class="toc-section-number">13</span> Short glossary</a></li>
+<li><a href="#data-provenance" id="toc-data-provenance"><span class="toc-section-number">14</span> Data provenance</a></li>
+</ul>
+</div>
+
+<style>
+.header-section-number::after, .toc-section-number::after { content: "."; }
+body { max-width: 1040px; margin: 0 auto; padding: 48px 36px 80px; background: #fff;
+color: #243b4a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+font-size: 16px; line-height: 1.7; }
+h1.title { color: #133d4a; font-size: 42px; line-height: 1.13; letter-spacing: -1.1px;
+border-top: 7px solid #167d8d; padding-top: 24px; margin-bottom: 18px; }
+h2 { color: #133d4a; font-size: 26px; border-bottom: 1px solid #cbdde2;
+padding-bottom: 12px; margin-top: 56px; }
+h3 { color: #167080; } a { color: #126e81; }
+#TOC { background: #eff6f8; border: 1px solid #d6e5e9; border-radius: 12px;
+padding: 20px 26px; margin: 28px 0 36px; font-size: 14px; }
+#TOC ul { columns: 2; column-gap: 28px; padding-left: 18px; }
+#TOC li { break-inside: avoid; padding: 3px 0; }
+pre { background: #f3f6f8; border: 1px solid #dce5e9; border-radius: 9px;
+padding: 16px; font-size: 13px; line-height: 1.65; overflow-x: auto; }
+code { color: #155064; background: #f0f5f7; overflow-wrap: anywhere; }
+pre code { overflow-wrap: normal; }
+.result { margin: 22px 0; border: 1px solid #cbdde2; border-radius: 12px;
+padding: 20px; background: #fff; }
+.result h3 { margin: 0 0 6px; font-size: 18px; }
+.result-meta { font-size: 13px; color: #586d78; margin: 0 0 16px; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
+th { background: #eaf3f5; color: #174c5c; text-align: left; font-weight: 650; }
+th, td { border-bottom: 1px solid #dce6e9; padding: 11px 12px; vertical-align: top; }
+tbody tr:nth-child(even) { background: #f7fafb; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.missing { color: #926022; font-style: italic; }
+.check { color: #275d43; background: #edf6ef; border-left: 4px solid #477c58;
+padding: 10px 15px; margin: 16px 0; font-size: 14px; }
+.caja-clave, .caja-recordatorio, .caja-aviso, .caja-limite { padding: 17px 21px;
+margin: 26px 0; border-radius: 9px; border-left: 5px solid; }
+.caja-clave { background: #edf6fa; border-color: #0f6c8d; }
+.workflow { background: #e8f3f5; color: #174c5c; border-left: 6px solid #167d8d;
+border-radius: 9px; padding: 18px 23px; margin: 26px 0; font-size: 17px; }
+.workflow p { margin: 5px 0; }
+.caja-recordatorio { background: #f3f8e8; border-color: #5f7f22; }
+.caja-aviso { background: #fff4e8; border-color: #c96b00; }
+.caja-limite { background: #fff0f2; border-color: #a83f52; }
+details { border: 1px solid #d6e2e7; border-radius: 9px; padding: 14px 18px; margin: 22px 0; }
+summary { cursor: pointer; font-weight: 650; color: #195266; }
+@media(max-width: 700px) { body { padding: 24px 16px; } h1.title { font-size: 32px; }
+#TOC ul { columns: 1; } .result { padding: 12px; } th,td { padding: 8px; } }
+@media print { body { max-width: none; padding: 0; } .result, .check { break-inside: avoid; }
+#TOC { display: none; } }
+</style>
+<div id="what-this-package-does" class="section level2" number="1">
+<h2><span class="header-section-number">1</span> What this package
+does</h2>
+<p><code>h2oplyr</code> provides familiar transformation verbs while
+keeping the observations inside an H2O cluster. The <strong>only
+external runtime dependency is <code>h2o</code></strong>. The
+<code>tidytable</code> API inspires parts of the interface, but neither
+<code>tidytable</code> nor <code>dplyr</code> participates in a
+calculation. <code>knitr</code> and <code>rmarkdown</code> are optional
+<strong>documentation-building</strong> dependencies.</p>
+<div class="workflow">
+<p><strong>The workflow is:</strong></p>
+<p>CSV file → H2OFrame → h2o_tbl → remote operations → H2OFrame</p>
+</div>
+<p>An <code>h2o_tbl</code> is a small R object containing a remote frame
+handle and grouping column names. R assembles expressions and inspects
+metadata; H2O processes the rows. Scalar reductions and category domains
+can reach R, but no transformation uses a local data frame, matrix or
+vector as its computational backend. For display only, the previews
+below request a few scalar values and categorical labels. Displaying a
+value necessarily brings that value to the reader; it does not change
+where selection, aggregation, joins and reshaping run.</p>
+<p>This tutorial is for R users familiar with selecting columns,
+filtering rows and grouping data. You will learn to inspect remote
+results, handle missing values, check joins and verify a reshape round
+trip. Java and a matching H2O client/server are the only external
+runtime requirements.</p>
+<p>This tutorial uses measurements of 344 penguins from three species in
+the Palmer Archipelago, collected during 2007–2009. The CSV is included
+in the package, so examples do not depend on a future download or a
+<code>palmerpenguins</code> installation.</p>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Practical question</th>
+<th align="left">Tools used below</th>
+<th align="left">Visible evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Which variables and rows do I need?</td>
+<td align="left"><code>h_select()</code>, <code>h_filter()</code>,
+<code>h_drop_na()</code></td>
+<td align="left">Values, column names and row counts</td>
+</tr>
+<tr class="even">
+<td align="left">How do I derive and summarize measurements?</td>
+<td align="left"><code>h_mutate()</code>, <code>h_summarize()</code>,
+<code>h_across()</code></td>
+<td align="left">Derived units and species means</td>
+</tr>
+<tr class="odd">
+<td align="left">Can I combine and reshape without losing
+information?</td>
+<td align="left"><code>h_left_join()</code>, pivot verbs</td>
+<td align="left">Preserved row counts and matching values</td>
+</tr>
+<tr class="even">
+<td align="left">How do ordering and sampling affect the result?</td>
+<td align="left">Slice verbs, <code>h_arrange()</code>,
+<code>h_lag()</code></td>
+<td align="left">Sample rows, tied maxima and lag values</td>
+</tr>
+</tbody>
+</table>
+<div class="caja-clave">
+<p><strong>Reading the examples.</strong> Each transformation is
+followed by values returned from H2O and a green check based on an
+executed assertion. A preview is a small window into the result; the
+caption reports the full result dimensions.</p>
+</div>
+</div>
+<div id="connect-once-then-import" class="section level2" number="2">
+<h2><span class="header-section-number">2</span> Connect once, then
+import</h2>
+<p>Install the package archive using
+<code>install.packages(path, repos = NULL, type = &quot;source&quot;)</code> after
+installing <code>h2o</code>. Start a matching H2O server explicitly:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Run this yourself, once per session. Loading h2oplyr never starts a server.</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>h2o<span class="sc">::</span><span class="fu">h2o.init</span>(<span class="at">nthreads =</span> <span class="dv">2</span>, <span class="at">max_mem_size =</span> <span class="st">&quot;2G&quot;</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(h2oplyr)</span></code></pre></div>
+<details>
+<summary>
+How the result previews work — complete rendering code
+</summary>
+<p>These helpers belong to this vignette, not to the package API.
+<code>preview_h2o()</code> accepts a remote table, a title, a few column
+names and a row limit (at most six). It prints HTML and returns no local
+analytical table. Numbers use scalar H2O reductions; text uses the
+categorical domain of a single selected value. H2O may internally cache
+small metadata previews. This is a deliberately small, slow display
+routine, not a data export facility. <code>verify_output()</code> stops
+the render if its condition fails. All helpers are defined here before
+their first use.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># Escape labels before placing them inside HTML.</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>html_text <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">gsub</span>(<span class="st">&quot;&amp;&quot;</span>, <span class="st">&quot;&amp;amp;&quot;</span>, x, <span class="at">fixed =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">gsub</span>(<span class="st">&quot;&lt;&quot;</span>, <span class="st">&quot;&amp;lt;&quot;</span>, x, <span class="at">fixed =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="fu">gsub</span>(<span class="st">&quot;&gt;&quot;</span>, <span class="st">&quot;&amp;gt;&quot;</span>, x, <span class="at">fixed =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>}</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co"># Show bounded remote values without creating a local data.frame.</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>preview_h2o <span class="ot">&lt;-</span> <span class="cf">function</span>(x, title, <span class="at">columns =</span> <span class="fu">names</span>(<span class="fu">as_h2o</span>(x)), <span class="at">rows =</span> <span class="dv">4</span><span class="dt">L</span>) {</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>  frame <span class="ot">&lt;-</span> <span class="fu">as_h2o</span>(x)</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>  <span class="fu">stopifnot</span>(<span class="fu">inherits</span>(frame, <span class="st">&quot;H2OFrame&quot;</span>), rows <span class="sc">&gt;=</span> <span class="dv">1</span><span class="dt">L</span>, rows <span class="sc">&lt;=</span> <span class="dv">6</span><span class="dt">L</span>,</span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>            <span class="fu">all</span>(columns <span class="sc">%in%</span> <span class="fu">names</span>(frame)))</span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  types <span class="ot">&lt;-</span> <span class="fu">unlist</span>(h2o<span class="sc">::</span><span class="fu">h2o.getTypes</span>(frame[, columns]), <span class="at">use.names =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>  shown <span class="ot">&lt;-</span> <span class="fu">min</span>(rows, <span class="fu">nrow</span>(frame))</span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&#39;</span><span class="sc">\n</span><span class="st">&lt;div class=&quot;result&quot;&gt;&lt;h3&gt;&#39;</span>, <span class="fu">html_text</span>(title), <span class="st">&#39;&lt;/h3&gt;&#39;</span>, <span class="at">sep =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&#39;&lt;p class=&quot;result-meta&quot;&gt;H2OFrame · &#39;</span>, <span class="fu">nrow</span>(frame), <span class="st">&#39; rows × &#39;</span>,</span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a>      <span class="fu">ncol</span>(frame), <span class="st">&#39; columns · showing &#39;</span>, shown, <span class="st">&#39; rows and &#39;</span>,</span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a>      <span class="fu">length</span>(columns), <span class="st">&#39; columns&lt;/p&gt;&lt;div class=&quot;table-scroll&quot;&gt;&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&#39;</span>,</span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a>      <span class="at">sep =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="fu">seq_along</span>(columns)) {</span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a>    alignment <span class="ot">&lt;-</span> <span class="cf">if</span> (types[j] <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;int&quot;</span>, <span class="st">&quot;real&quot;</span>)) <span class="st">&#39; class=&quot;num&quot;&#39;</span> <span class="cf">else</span> <span class="st">&quot;&quot;</span></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a>    <span class="fu">cat</span>(<span class="st">&#39;&lt;th scope=&quot;col&quot;&#39;</span>, alignment, <span class="st">&#39;&gt;&#39;</span>, <span class="fu">html_text</span>(columns[j]), <span class="st">&#39;&lt;/th&gt;&#39;</span>, <span class="at">sep =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a>  }</span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&#39;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody&gt;&#39;</span>)</span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(shown)) {</span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a>    <span class="fu">cat</span>(<span class="st">&#39;&lt;tr&gt;&#39;</span>)</span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a>    <span class="cf">for</span> (j <span class="cf">in</span> <span class="fu">seq_along</span>(columns)) {</span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a>      <span class="co"># Two-step indexing keeps the cell as a remote frame in H2O.</span></span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a>      cell <span class="ot">&lt;-</span> frame[i, ][, columns[j]]</span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a>      <span class="fu">stopifnot</span>(<span class="fu">inherits</span>(cell, <span class="st">&quot;H2OFrame&quot;</span>))</span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a>      numeric_column <span class="ot">&lt;-</span> types[j] <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;int&quot;</span>, <span class="st">&quot;real&quot;</span>)</span>
+<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a>      alignment <span class="ot">&lt;-</span> <span class="cf">if</span> (numeric_column) <span class="st">&#39; class=&quot;num&quot;&#39;</span> <span class="cf">else</span> <span class="st">&quot;&quot;</span></span>
+<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a>      <span class="cf">if</span> (h2o<span class="sc">::</span><span class="fu">h2o.sum</span>(<span class="fu">is.na</span>(cell)) <span class="sc">==</span> <span class="dv">1</span>) {</span>
+<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a>        value <span class="ot">&lt;-</span> <span class="st">&#39;&lt;span class=&quot;missing&quot;&gt;NA&lt;/span&gt;&#39;</span></span>
+<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a>      } <span class="cf">else</span> <span class="cf">if</span> (numeric_column) {</span>
+<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a>        number <span class="ot">&lt;-</span> h2o<span class="sc">::</span><span class="fu">h2o.sum</span>(cell)</span>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a>        value <span class="ot">&lt;-</span> <span class="cf">if</span> (number <span class="sc">==</span> <span class="fu">floor</span>(number)) <span class="fu">sprintf</span>(<span class="st">&quot;%.0f&quot;</span>, number) <span class="cf">else</span> <span class="fu">sprintf</span>(<span class="st">&quot;%.2f&quot;</span>, number)</span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a>        <span class="co"># Re-encode in H2O so the domain contains only this cell&#39;s label.</span></span>
+<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a>        label <span class="ot">&lt;-</span> h2o<span class="sc">::</span><span class="fu">h2o.levels</span>(h2o<span class="sc">::</span><span class="fu">h2o.asfactor</span>(h2o<span class="sc">::</span><span class="fu">h2o.ascharacter</span>(cell)))</span>
+<span id="cb2-41"><a href="#cb2-41" tabindex="-1"></a>        <span class="fu">stopifnot</span>(<span class="fu">length</span>(label) <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span>)</span>
+<span id="cb2-42"><a href="#cb2-42" tabindex="-1"></a>        value <span class="ot">&lt;-</span> <span class="fu">html_text</span>(<span class="fu">as.character</span>(label[[<span class="dv">1</span><span class="dt">L</span>]]))</span>
+<span id="cb2-43"><a href="#cb2-43" tabindex="-1"></a>      }</span>
+<span id="cb2-44"><a href="#cb2-44" tabindex="-1"></a>      <span class="fu">cat</span>(<span class="st">&#39;&lt;td&#39;</span>, alignment, <span class="st">&#39;&gt;&#39;</span>, value, <span class="st">&#39;&lt;/td&gt;&#39;</span>, <span class="at">sep =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb2-45"><a href="#cb2-45" tabindex="-1"></a>    }</span>
+<span id="cb2-46"><a href="#cb2-46" tabindex="-1"></a>    <span class="fu">cat</span>(<span class="st">&#39;&lt;/tr&gt;&#39;</span>)</span>
+<span id="cb2-47"><a href="#cb2-47" tabindex="-1"></a>  }</span>
+<span id="cb2-48"><a href="#cb2-48" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&#39;&lt;/tbody&gt;&lt;/table&gt;&lt;/div&gt;&lt;/div&gt;</span><span class="sc">\n\n</span><span class="st">&#39;</span>)</span>
+<span id="cb2-49"><a href="#cb2-49" tabindex="-1"></a>  <span class="fu">invisible</span>(<span class="cn">NULL</span>)</span>
+<span id="cb2-50"><a href="#cb2-50" tabindex="-1"></a>}</span>
+<span id="cb2-51"><a href="#cb2-51" tabindex="-1"></a></span>
+<span id="cb2-52"><a href="#cb2-52" tabindex="-1"></a><span class="co"># Only a successful, evaluated assertion receives a green check.</span></span>
+<span id="cb2-53"><a href="#cb2-53" tabindex="-1"></a>verify_output <span class="ot">&lt;-</span> <span class="cf">function</span>(condition, label) {</span>
+<span id="cb2-54"><a href="#cb2-54" tabindex="-1"></a>  <span class="fu">stopifnot</span>(<span class="fu">isTRUE</span>(condition))</span>
+<span id="cb2-55"><a href="#cb2-55" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&#39;</span><span class="sc">\n</span><span class="st">&lt;p class=&quot;check&quot;&gt;&lt;strong&gt;Verified.&lt;/strong&gt; &#39;</span>, <span class="fu">html_text</span>(label), <span class="st">&#39;&lt;/p&gt;</span><span class="sc">\n\n</span><span class="st">&#39;</span>, <span class="at">sep =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb2-56"><a href="#cb2-56" tabindex="-1"></a>}</span></code></pre></div>
+</details>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Import the bundled CSV and confirm its dimensions.</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>penguins <span class="ot">&lt;-</span> <span class="fu">h_penguins</span>()</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(penguins)) <span class="sc">==</span> <span class="dv">344</span>)</span></code></pre></div>
+<div class="result">
+<h3>
+The imported penguins
+</h3>
+<p class="result-meta">
+H2OFrame · 344 rows × 8 columns · showing 4 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col">
+island
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+Torgersen
+</td>
+<td class="num">
+39.10
+</td>
+<td class="num">
+3750
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+Torgersen
+</td>
+<td class="num">
+39.50
+</td>
+<td class="num">
+3800
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+Torgersen
+</td>
+<td class="num">
+40.30
+</td>
+<td class="num">
+3250
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+Torgersen
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> 344 observations and 8 variables imported
+into H2O.
+</p>
+<p><code>h_penguins()</code> uploads the local CSV through
+<code>h2o.uploadFile()</code> and declares <code>&quot;NA&quot;</code> as missing
+in every column. Species, island and sex are categorical; measurements
+are numeric. For your own files, upload directly with
+<code>h2o::h2o.uploadFile()</code> and wrap the returned frame with
+<code>h2o_tbl()</code>.</p>
+<p>The default table printer displays metadata only. This vignette adds
+bounded value previews so you can inspect the results directly.
+<code>h_collect(penguins)</code> and <code>as_h2o(penguins)</code> both
+return the <strong>remote H2OFrame</strong>, preserving the backend
+contract. This is an intentional change from the original standalone
+prototype.</p>
+<p>The eight variables are species, island, bill length and depth (mm),
+flipper length (mm), body mass (g), sex and year. A missing measurement
+appears as <code>NA</code>, not as zero. The same penguin can have one
+measurement missing and others present.</p>
+<div class="caja-clave">
+<p><strong>Recognize the object.</strong> The result is an
+<code>H2OFrame</code> wrapped by <code>h2o_tbl</code>. The small HTML
+table above is a display of selected values, not a new data backend.</p>
+</div>
+</div>
+<div id="select-only-the-columns-needed" class="section level2" number="3">
+<h2><span class="header-section-number">3</span> Select only the columns
+needed</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Keep relevant columns, then rename and order the bill measurements.</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>bills <span class="ot">&lt;-</span> <span class="fu">h_select</span>(penguins, species, <span class="fu">starts_with</span>(<span class="st">&quot;bill_&quot;</span>))</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>measurements <span class="ot">&lt;-</span> <span class="fu">h_select</span>(penguins, <span class="fu">where</span>(is.numeric))</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>renamed <span class="ot">&lt;-</span> <span class="fu">h_rename</span>(bills, <span class="at">bill_length =</span> bill_length_mm)</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>relocated <span class="ot">&lt;-</span> <span class="fu">h_relocate</span>(renamed, species, <span class="at">.before =</span> bill_length)</span></code></pre></div>
+<div class="result">
+<h3>
+Selected bill measurements
+</h3>
+<p class="result-meta">
+H2OFrame · 344 rows × 3 columns · showing 4 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+bill_depth_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.10
+</td>
+<td class="num">
+18.70
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.50
+</td>
+<td class="num">
+17.40
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+40.30
+</td>
+<td class="num">
+18
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Numeric variables
+</h3>
+<p class="result-meta">
+H2OFrame · 344 rows × 5 columns · showing 3 rows and 5 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+bill_depth_mm
+</th>
+<th scope="col" class="num">
+flipper_length_mm
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+year
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="num">
+39.10
+</td>
+<td class="num">
+18.70
+</td>
+<td class="num">
+181
+</td>
+<td class="num">
+3750
+</td>
+<td class="num">
+2007
+</td>
+</tr>
+<tr>
+<td class="num">
+39.50
+</td>
+<td class="num">
+17.40
+</td>
+<td class="num">
+186
+</td>
+<td class="num">
+3800
+</td>
+<td class="num">
+2007
+</td>
+</tr>
+<tr>
+<td class="num">
+40.30
+</td>
+<td class="num">
+18
+</td>
+<td class="num">
+195
+</td>
+<td class="num">
+3250
+</td>
+<td class="num">
+2007
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Renamed and relocated columns
+</h3>
+<p class="result-meta">
+H2OFrame · 344 rows × 3 columns · showing 4 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length
+</th>
+<th scope="col" class="num">
+bill_depth_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.10
+</td>
+<td class="num">
+18.70
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.50
+</td>
+<td class="num">
+17.40
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+40.30
+</td>
+<td class="num">
+18
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Selection, renaming and final column order
+match the requested schema.
+</p>
+<p>Selection operates on column names and H2O schema types.
+<code>where()</code> supports the base predicates
+<code>is.numeric</code>, <code>is.character</code> and
+<code>is.factor</code>; arbitrary predicates are deliberately rejected.
+<code>all_of()</code> requires every requested column, while
+<code>any_of()</code> allows absent names. Ranges such as
+<code>species:island</code> and exclusions such as <code>-year</code>
+are supported. A grouped selection retains its grouping columns.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Selection changes the schema, not the
+observations. All three previews retain the original 344 rows.</p>
+</div>
+</div>
+<div id="missing-values-and-filtering" class="section level2" number="4">
+<h2><span class="header-section-number">4</span> Missing values and
+filtering</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Compare complete-case filtering with two measurement thresholds.</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>complete_penguins <span class="ot">&lt;-</span> <span class="fu">h_drop_na</span>(penguins)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(complete_penguins)) <span class="sc">==</span> <span class="dv">333</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Complete observations:&quot;</span>, <span class="fu">nrow</span>(<span class="fu">as_h2o</span>(complete_penguins)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; Complete observations: 333</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>large <span class="ot">&lt;-</span> <span class="fu">h_filter</span>(penguins, body_mass_g <span class="sc">&gt;=</span> <span class="dv">5000</span>)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Penguins weighing at least 5000 g:&quot;</span>, <span class="fu">nrow</span>(<span class="fu">as_h2o</span>(large)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; Penguins weighing at least 5000 g: 67</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>bill_range <span class="ot">&lt;-</span> <span class="fu">h_filter</span>(penguins, <span class="fu">h_between</span>(bill_length_mm, <span class="dv">40</span>, <span class="dv">50</span>))</span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Penguins with bill length from 40 to 50 mm:&quot;</span>, <span class="fu">nrow</span>(<span class="fu">as_h2o</span>(bill_range)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt; Penguins with bill length from 40 to 50 mm: 190</span></span></code></pre></div>
+<div class="result">
+<h3>
+Complete cases
+</h3>
+<p class="result-meta">
+H2OFrame · 333 rows × 8 columns · showing 4 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col">
+sex
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.10
+</td>
+<td class="num">
+3750
+</td>
+<td>
+male
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.50
+</td>
+<td class="num">
+3800
+</td>
+<td>
+female
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+40.30
+</td>
+<td class="num">
+3250
+</td>
+<td>
+female
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+36.70
+</td>
+<td class="num">
+3450
+</td>
+<td>
+female
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Body mass of at least 5,000 g
+</h3>
+<p class="result-meta">
+H2OFrame · 67 rows × 8 columns · showing 4 rows and 2 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+5700
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+5700
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+5400
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+5200
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Bill length between 40 and 50 mm
+</h3>
+<p class="result-meta">
+H2OFrame · 190 rows × 8 columns · showing 4 rows and 2 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+40.30
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+42
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+41.10
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+42.50
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Complete-case count and both filter
+boundaries checked over the full remote results.
+</p>
+<p>A missing filter condition is dropped. The expression interpreter
+propagates missing comparisons explicitly, because H2O’s raw comparison
+behavior can differ from R’s. <code>h_filter_out()</code> negates the
+combined predicate and also drops missing conditions. Use
+<code>is.na()</code> when you intend to select missing measurements.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># Select the missing body masses explicitly.</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>missing_mass <span class="ot">&lt;-</span> <span class="fu">h_filter</span>(penguins, <span class="fu">is.na</span>(body_mass_g))</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(missing_mass)) <span class="sc">==</span> <span class="dv">2</span>)</span></code></pre></div>
+<div class="result">
+<h3>
+The two missing body masses
+</h3>
+<p class="result-meta">
+H2OFrame · 2 rows × 8 columns · showing 2 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Both retained rows have a missing body mass.
+</p>
+<p>Dropping all incomplete rows yields 333 penguins, whereas a mass-only
+analysis can retain 342. Those are different analysis populations.
+Replacing missing body mass with zero would invent a biologically
+impossible measurement, so this tutorial removes missing mass only where
+it is needed.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Choose the missing-data rule for the
+question: requiring every variable to be complete removes more rows than
+requiring body mass alone.</p>
+</div>
+</div>
+<div id="derive-columns-without-moving-observations" class="section level2" number="5">
+<h2><span class="header-section-number">5</span> Derive columns without
+moving observations</h2>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Drop only missing mass, then derive units and a mass category.</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>prepared <span class="ot">&lt;-</span> penguins <span class="sc">|&gt;</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="fu">h_drop_na</span>(body_mass_g) <span class="sc">|&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="fu">h_mutate</span>(</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>    <span class="at">mass_kg =</span> body_mass_g <span class="sc">/</span> <span class="dv">1000</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>    <span class="at">mass_band =</span> <span class="fu">h_case_when</span>(</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>      body_mass_g <span class="sc">&gt;=</span> <span class="dv">5000</span> <span class="sc">~</span> <span class="st">&quot;large&quot;</span>,</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>      body_mass_g <span class="sc">&gt;=</span> <span class="dv">3500</span> <span class="sc">~</span> <span class="st">&quot;medium&quot;</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>      <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">&quot;small&quot;</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>    )</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  )</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(prepared)) <span class="sc">==</span> <span class="dv">342</span>)</span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Total measured mass (kg):&quot;</span>,</span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>    h2o<span class="sc">::</span><span class="fu">h2o.sum</span>(<span class="fu">as_h2o</span>(prepared)[, <span class="st">&quot;mass_kg&quot;</span>]), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; Total measured mass (kg): 1437</span></span></code></pre></div>
+<div class="result">
+<h3>
+Mass in grams, kilograms and bands
+</h3>
+<p class="result-meta">
+H2OFrame · 342 rows × 10 columns · showing 4 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+mass_kg
+</th>
+<th scope="col">
+mass_band
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3750
+</td>
+<td class="num">
+3.75
+</td>
+<td>
+medium
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3800
+</td>
+<td class="num">
+3.80
+</td>
+<td>
+medium
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3250
+</td>
+<td class="num">
+3.25
+</td>
+<td>
+small
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3450
+</td>
+<td class="num">
+3.45
+</td>
+<td>
+small
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> 342 measured masses retained; the kg-to-g
+conversion agrees for every row.
+</p>
+<p>Named mutations run sequentially, so a later expression can use a
+newly created column. Arithmetic, comparisons, selected H2O mathematical
+and text functions, and the package’s vector helpers are supported.
+Calls to arbitrary R functions or other package namespaces raise an
+error. <code>h_transmute()</code> retains only the new named columns.
+Grouped mutation is not implemented: ungroup explicitly rather than
+accidentally calculate a global value inside a group.</p>
+<p>The native <code>|&gt;</code> pipe and the package’s <code>%.%</code>
+pipe can both chain these verbs.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Read the derived columns side by side. The
+numerical assertion checks every measured mass, not just the displayed
+rows.</p>
+</div>
+</div>
+<div id="summarize-by-species" class="section level2" number="6">
+<h2><span class="header-section-number">6</span> Summarize by
+species</h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># Compute counts and means inside H2O, grouped by species.</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>by_species <span class="ot">&lt;-</span> <span class="fu">h_summarize</span>(</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  penguins,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">observations =</span> <span class="fu">n</span>(),</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">mean_mass_g =</span> <span class="fu">mean</span>(body_mass_g, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">mean_bill_mm =</span> <span class="fu">mean</span>(bill_length_mm, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  <span class="at">.by =</span> species</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>)</span></code></pre></div>
+<div class="result">
+<h3>
+Species-level summary
+</h3>
+<p class="result-meta">
+H2OFrame · 3 rows × 4 columns · showing 3 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+observations
+</th>
+<th scope="col" class="num">
+mean_mass_g
+</th>
+<th scope="col" class="num">
+mean_bill_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+152
+</td>
+<td class="num">
+3700.66
+</td>
+<td class="num">
+38.79
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td class="num">
+68
+</td>
+<td class="num">
+3733.09
+</td>
+<td class="num">
+48.83
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+124
+</td>
+<td class="num">
+5076.02
+</td>
+<td class="num">
+47.50
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Three groups account for all 344
+observations.
+</p>
+<p>The output has one row per species. <code>n()</code> counts all
+observations; each mean removes missing values independently. Gentoo
+penguins have the highest mean body mass in this sample. This is a
+descriptive comparison, not a causal effect of species or island.</p>
+<p><code>.by</code> applies grouping to this call only. The equivalent
+persistent grouping form is
+<code>h_group_by(penguins, species) |&gt; h_summarize(...)</code>;
+summaries themselves return ungrouped results. <code>.add = TRUE</code>
+adds grouping columns, and <code>h_group_vars()</code> reports the
+current grouping metadata.</p>
+<p>Supported reductions are <code>n()</code>,
+<code>n_distinct(column)</code>, <code>sum</code>, <code>mean</code>,
+<code>min</code>, <code>max</code>, <code>sd</code>, <code>var</code>
+and <code>median</code>. Each reduction takes a column, optionally with
+<code>na.rm</code>. Create transformed columns with
+<code>h_mutate()</code> before aggregating. The adapter rejects
+empty-input summaries explicitly.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Group sizes count penguins, while each
+mean uses its own non-missing measurements. A group count is not
+necessarily the denominator of every mean.</p>
+</div>
+</div>
+<div id="transform-several-columns-consistently" class="section level2" number="7">
+<h2><span class="header-section-number">7</span> Transform several
+columns consistently</h2>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># Apply unit conversion and grouped means to multiple columns.</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>scaled <span class="ot">&lt;-</span> <span class="fu">h_mutate</span>(</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  bills,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="fu">h_across</span>(<span class="fu">starts_with</span>(<span class="st">&quot;bill_&quot;</span>), <span class="fu">list</span>(<span class="at">cm =</span> <span class="cf">function</span>(z) z <span class="sc">/</span> <span class="dv">10</span>))</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>)</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>average_bills <span class="ot">&lt;-</span> bills <span class="sc">|&gt;</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="fu">h_drop_na</span>() <span class="sc">|&gt;</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="fu">h_group_by</span>(species) <span class="sc">|&gt;</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>  <span class="fu">h_summarize_across</span>(<span class="fu">starts_with</span>(<span class="st">&quot;bill_&quot;</span>), <span class="fu">list</span>(<span class="at">average =</span> mean))</span></code></pre></div>
+<div class="result">
+<h3>
+Millimetres converted to centimetres
+</h3>
+<p class="result-meta">
+H2OFrame · 344 rows × 5 columns · showing 4 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+bill_length_mm_cm
+</th>
+<th scope="col" class="num">
+bill_depth_mm_cm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.10
+</td>
+<td class="num">
+3.91
+</td>
+<td class="num">
+1.87
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+39.50
+</td>
+<td class="num">
+3.95
+</td>
+<td class="num">
+1.74
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+40.30
+</td>
+<td class="num">
+4.03
+</td>
+<td class="num">
+1.80
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Mean bill measurements by species
+</h3>
+<p class="result-meta">
+H2OFrame · 3 rows × 3 columns · showing 3 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm_average
+</th>
+<th scope="col" class="num">
+bill_depth_mm_average
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+38.79
+</td>
+<td class="num">
+18.35
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td class="num">
+48.83
+</td>
+<td class="num">
+18.42
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+47.50
+</td>
+<td class="num">
+14.98
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Across conversion and the three grouped
+summaries checked.
+</p>
+<p><code>h_across()</code> builds column expressions with names such as
+<code>bill_length_mm_cm</code>. The one-argument function body is
+interpreted through the same remote expression rules as
+<code>h_mutate()</code>. Summary function identity is used, so an alias
+such as <code>average = mean</code> still computes the mean. Across
+summaries default to <code>na.rm = FALSE</code>; this example
+deliberately removes missing bill measurements first. The standalone
+<code>h_mutate_across()</code> wrapper is retained for
+compatibility.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Across applies the same expression to
+several columns; the suffix records the transformation or summary that
+produced each output.</p>
+</div>
+</div>
+<div id="join-summaries-back-to-observations" class="section level2" number="8">
+<h2><span class="header-section-number">8</span> Join summaries back to
+observations</h2>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Attach a unique species summary to each observed mass.</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>enriched <span class="ot">&lt;-</span> <span class="fu">h_left_join</span>(</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  prepared, by_species,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">by =</span> <span class="st">&quot;species&quot;</span>, <span class="at">relationship =</span> <span class="st">&quot;many-to-one&quot;</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(enriched)) <span class="sc">==</span> <span class="fu">nrow</span>(<span class="fu">as_h2o</span>(prepared)))</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>enriched <span class="ot">&lt;-</span> <span class="fu">h_mutate</span>(enriched, <span class="at">mass_minus_species_mean =</span> body_mass_g <span class="sc">-</span> mean_mass_g)</span></code></pre></div>
+<div class="result">
+<h3>
+Observed mass versus its species mean
+</h3>
+<p class="result-meta">
+H2OFrame · 342 rows × 14 columns · showing 4 rows and 4 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+mean_mass_g
+</th>
+<th scope="col" class="num">
+mass_minus_species_mean
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+3700.66
+</td>
+<td class="num">
+-850.66
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+3700.66
+</td>
+<td class="num">
+-850.66
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+3700.66
+</td>
+<td class="num">
+-800.66
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+3700.66
+</td>
+<td class="num">
+-800.66
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> The join preserves all 342 measured penguins
+and matches a species mean to each.
+</p>
+<p>The relationship check ensures the right table has at most one record
+per species, preventing accidental multiplication of penguin rows.
+Inner, left, right and full equijoins are available.
+<code>h_semi_join()</code> selects left rows with a match;
+<code>h_anti_join()</code> selects those without one. Named keys map
+different column names, for example
+<code>by = c(species = &quot;species_code&quot;)</code>.</p>
+<p>A full join is implemented using a left join plus unmatched right
+rows, all inside H2O. Missing-key matching follows H2O, and join row
+order is unspecified. Always use <code>h_arrange()</code> when
+subsequent calculations depend on ordering.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> A valid many-to-one join must preserve the
+left row count. Sorting the preview makes it readable; join order itself
+is unspecified.</p>
+</div>
+</div>
+<div id="reshape-measurements-from-wide-to-long-and-back" class="section level2" number="9">
+<h2><span class="header-section-number">9</span> Reshape measurements
+from wide to long and back</h2>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="co"># Use species-level summaries so the ID is naturally unique.</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>wide <span class="ot">&lt;-</span> <span class="fu">h_summarize</span>(</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  penguins,</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">bill_length_mm =</span> <span class="fu">mean</span>(bill_length_mm, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">bill_depth_mm =</span> <span class="fu">mean</span>(bill_depth_mm, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">.by =</span> species</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>)</span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>long <span class="ot">&lt;-</span> <span class="fu">h_pivot_longer</span>(</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  wide, <span class="fu">starts_with</span>(<span class="st">&quot;bill_&quot;</span>),</span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">names_to =</span> <span class="st">&quot;measurement&quot;</span>, <span class="at">values_to =</span> <span class="st">&quot;mean_mm&quot;</span></span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>)</span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(long)) <span class="sc">==</span> <span class="dv">6</span>)</span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a>restored <span class="ot">&lt;-</span> <span class="fu">h_pivot_wider</span>(long, measurement, mean_mm)</span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(restored)) <span class="sc">==</span> <span class="dv">3</span>)</span></code></pre></div>
+<div class="result">
+<h3>
+Before pivoting: one row per species
+</h3>
+<p class="result-meta">
+H2OFrame · 3 rows × 3 columns · showing 3 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+bill_depth_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+38.79
+</td>
+<td class="num">
+18.35
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td class="num">
+48.83
+</td>
+<td class="num">
+18.42
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+47.50
+</td>
+<td class="num">
+14.98
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Long format: one row per measurement
+</h3>
+<p class="result-meta">
+H2OFrame · 6 rows × 3 columns · showing 6 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col">
+measurement
+</th>
+<th scope="col" class="num">
+mean_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+bill_length_mm
+</td>
+<td class="num">
+38.79
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td>
+bill_depth_mm
+</td>
+<td class="num">
+18.35
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td>
+bill_length_mm
+</td>
+<td class="num">
+48.83
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td>
+bill_depth_mm
+</td>
+<td class="num">
+18.42
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td>
+bill_length_mm
+</td>
+<td class="num">
+47.50
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td>
+bill_depth_mm
+</td>
+<td class="num">
+14.98
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Back to wide format
+</h3>
+<p class="result-meta">
+H2OFrame · 3 rows × 3 columns · showing 3 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+<th scope="col" class="num">
+bill_depth_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+38.79
+</td>
+<td class="num">
+18.35
+</td>
+</tr>
+<tr>
+<td>
+Chinstrap
+</td>
+<td class="num">
+48.83
+</td>
+<td class="num">
+18.42
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+47.50
+</td>
+<td class="num">
+14.98
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Wide → long → wide preserves both mean
+measurements for every species.
+</p>
+<p>The long result contains six species/measurement combinations.
+Widening gets the output names from the remote categorical domain and
+combines values with remote joins. Repeated ID/name combinations are
+rejected: decide on an aggregation before reshaping. This avoids
+silently choosing one measurement or creating a local list-column.
+<code>values_fill</code> replaces missing result cells, including
+explicitly missing input values.</p>
+<p>For text transformations, <code>h_separate()</code> uses H2O
+regular-expression splitting. <code>h_unite()</code> uses H2O
+categorical interaction with encoded original underscores; its current
+separator cannot contain dollar signs or backslashes. High-cardinality
+interaction domains can consume substantial cluster memory.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> The round-trip check compares both
+measurements across all species. Matching row counts alone would not
+prove that the values survived.</p>
+</div>
+</div>
+<div id="sampling-ties-and-order-dependent-calculations" class="section level2" number="10">
+<h2><span class="header-section-number">10</span> Sampling, ties and
+order-dependent calculations</h2>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="co"># Sample reproducibly, retain tied maxima and compute a sorted lag.</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>sample_penguins <span class="ot">&lt;-</span> <span class="fu">h_slice_sample</span>(prepared, <span class="at">n =</span> <span class="dv">12</span>, <span class="at">seed =</span> <span class="dv">2026</span>)</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(<span class="fu">as_h2o</span>(sample_penguins)) <span class="sc">==</span> <span class="dv">12</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>heaviest <span class="ot">&lt;-</span> <span class="fu">h_slice_max</span>(prepared, body_mass_g, <span class="at">n =</span> <span class="dv">3</span>, <span class="at">with_ties =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Rows among the three heaviest positions, including ties:&quot;</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>    <span class="fu">nrow</span>(<span class="fu">as_h2o</span>(heaviest)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt; Rows among the three heaviest positions, including ties: 4</span></span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>ordered <span class="ot">&lt;-</span> <span class="fu">h_arrange</span>(prepared, body_mass_g)</span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>ordered <span class="ot">&lt;-</span> <span class="fu">h_mutate</span>(ordered, <span class="at">previous_mass =</span> <span class="fu">h_lag</span>(body_mass_g))</span></code></pre></div>
+<div class="result">
+<h3>
+A seeded sample of 12 penguins
+</h3>
+<p class="result-meta">
+H2OFrame · 12 rows × 10 columns · showing 4 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+bill_length_mm
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2975
+</td>
+<td class="num">
+37.50
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3550
+</td>
+<td class="num">
+39.70
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+5550
+</td>
+<td class="num">
+50
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+3350
+</td>
+<td class="num">
+35.50
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+The heaviest positions, including ties
+</h3>
+<p class="result-meta">
+H2OFrame · 4 rows × 10 columns · showing 4 rows and 2 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+6300
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+6050
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+6000
+</td>
+</tr>
+<tr>
+<td>
+Gentoo
+</td>
+<td class="num">
+6000
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Previous mass after sorting
+</h3>
+<p class="result-meta">
+H2OFrame · 342 rows × 11 columns · showing 4 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+previous_mass
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Chinstrap
+</td>
+<td class="num">
+2700
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+2700
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+2850
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+2850
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Sample size is 12; the first lag is missing
+and every later lag matches the preceding mass.
+</p>
+<p>Sampling uses H2O random columns. Sampling with replacement creates
+draw indices in H2O and joins them to rows. With
+<code>seed = NULL</code> (the default), no seed is passed to H2O; supply
+a seed explicitly when reproducibility is needed. Identical seeds are
+reproducible on the same frame and cluster layout; they are not a
+promise of identical samples across versions or distributed layouts.
+<code>with_ties = TRUE</code> can return more than <code>n</code>
+rows.</p>
+<p>Lag, lead, cumulative operations and <code>h_fill()</code> use
+current row order. Penguins are not a longitudinal time series: the lag
+example illustrates an ordered comparison, not a temporal
+interpretation. Grouped windows and grouped slicing are rejected in this
+release.</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> A seeded sample is reproducible within the
+documented setting. A lag is meaningful only after choosing an order;
+penguins here are not a longitudinal panel.</p>
+</div>
+</div>
+<div id="validation-and-current-boundaries" class="section level2" number="11">
+<h2><span class="header-section-number">11</span> Validation and current
+boundaries</h2>
+<p>Every exported function has an executable example with an assertion.
+The package also includes regression tests for missing values,
+aggregation, ties, empty slices, join multiplicity, invalid expressions
+and input preservation. Integration tests compare H2O function bindings
+before and after execution without modifying the H2O namespace. A static
+audit rejects local-table calls in package functions. Additional
+maintainer-only download instrumentation is kept outside the
+package.</p>
+<p>Run all examples and regressions against a cluster you started
+explicitly:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>h2o<span class="sc">::</span><span class="fu">h2o.init</span>(<span class="at">nthreads =</span> <span class="dv">2</span>, <span class="at">max_mem_size =</span> <span class="st">&quot;2G&quot;</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="fu">library</span>(h2oplyr)</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;examples.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="cf">for</span> (nm <span class="cf">in</span> <span class="fu">names</span>(examples)) <span class="fu">eval</span>(examples[[nm]])</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;regressions.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span></code></pre></div>
+<p>This package is an explicit subset of tidy-style manipulation, not a
+complete drop-in replacement for <code>dplyr</code> or
+<code>tidytable</code>. It has no local rowwise/map backend,
+non-equality joins, automatic list-column nesting, arbitrary R
+callbacks, grouped mutation or implicit duplicate-cell pivot
+aggregation. <code>h_bind_rows()</code> requires matching column-name
+sets. <code>h_nest_by()</code> returns a list of remote group handles
+and is intended for a modest number of groups.</p>
+<p>When no cluster is connected, rebuilding this vignette retains the
+code but skips H2O execution. The distributed HTML was built against an
+explicitly connected server. The package never starts or shuts down a
+user’s cluster while loading, printing, or running its ordinary
+examples.</p>
+</div>
+<div id="reproduce-and-interpret-the-checks" class="section level2" number="12">
+<h2><span class="header-section-number">12</span> Reproduce and
+interpret the checks</h2>
+<p>The green checks accompany the tutorial’s calculations. The installed
+package also contains 73 asserted API examples and semantic regression
+tests; those are a separate suite, not 73 examples all reproduced on
+this page. The commands in “Connect once” and “Validation” are
+instructions to run yourself, rather than claims that this HTML launched
+a cluster or reran the complete package test suite.</p>
+<p class="check">
+<strong>Executed with H2O.</strong> R 4.6.1; h2oplyr 0.2.6; h2o
+3.44.0.3. All tutorial assertions completed during rendering.
+</p>
+<p>Try changing the mass threshold or selecting another species, then
+rerun the section and inspect both the values and the assertion. Do not
+infer a successful transformation merely from seeing an object name or
+from a silent <code>stopifnot()</code>.</p>
+</div>
+<div id="short-glossary" class="section level2" number="13">
+<h2><span class="header-section-number">13</span> Short glossary</h2>
+<ul>
+<li><strong>H2OFrame:</strong> data stored in an H2O cluster, accessed
+through an R handle.</li>
+<li><strong>h2o_tbl:</strong> the package wrapper around that handle and
+grouping metadata.</li>
+<li><strong>Preview:</strong> a small display of remote values; its
+caption reports the full dimensions.</li>
+<li><strong>NA:</strong> a missing value, distinct from a zero
+measurement.</li>
+<li><strong>Assertion:</strong> a condition that must hold; a failure
+stops the document build.</li>
+<li><strong>Many-to-one join:</strong> each left key can match at most
+one right-hand record.</li>
+</ul>
+</div>
+<div id="data-provenance" class="section level2" number="14">
+<h2><span class="header-section-number">14</span> Data provenance</h2>
+<p>Data: Horst AM, Hill AP, Gorman KB (2020), <em>palmerpenguins: Palmer
+Archipelago (Antarctica) penguin data</em>, <a href="https://doi.org/10.5281/zenodo.3960218">doi:10.5281/zenodo.3960218</a>.
+The data are available under CC0. Measurements were collected by Kristen
+Gorman and Palmer Station LTER. The research description is Gorman KB,
+Williams TD, Fraser WR (2014), <a href="https://doi.org/10.1371/journal.pone.0090081">doi:10.1371/journal.pone.0090081</a>.
+The bundled CSV’s source, retrieval date and SHA-256 are recorded in
+<code>system.file(&quot;extdata&quot;, &quot;PROVENANCE.md&quot;, package = &quot;h2oplyr&quot;)</code>.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,23 @@
+Package: h2oplyr
+Type: Package
+Title: Tidy Data Manipulation on Remote 'H2O' Frames
+Version: 0.2.6
+Authors@R: person("Carlos", "Ortega", email = "cof@qualityexcellence.es", role = c("aut", "cre"))
+Description: Provides selection, filtering, mutation, aggregation, joins,
+    reshaping and window operations on remote 'H2O' frames. Data manipulation
+    is delegated to 'H2O'; no local table backend is used. Includes an English
+    tutorial and reproducible examples using Palmer penguin measurements.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports: h2o (>= 3.44.0.3)
+Suggests: knitr, rmarkdown
+VignetteBuilder: knitr
+SystemRequirements: Java (>= 8), a running H2O cluster matching the h2o
+        R package version
+NeedsCompilation: no
+Packaged: 2026-09-29 07:07:52 UTC; carlosortega
+Author: Carlos Ortega [aut, cre]
+Maintainer: Carlos Ortega <cof@qualityexcellence.es>
+Repository: CRAN
+Date/Publication: 2026-10-15 15:20:15 UTC
