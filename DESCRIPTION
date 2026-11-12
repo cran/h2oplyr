@@ -1,7 +1,7 @@
 Package: h2oplyr
 Type: Package
 Title: Tidy Data Manipulation on Remote 'H2O' Frames
-Version: 0.2.6
+Version: 0.3.0
 Authors@R: person("Carlos", "Ortega", email = "cof@qualityexcellence.es", role = c("aut", "cre"))
 Description: Provides selection, filtering, mutation, aggregation, joins,
     reshaping and window operations on remote 'H2O' frames. Data manipulation
@@ -16,8 +16,8 @@ VignetteBuilder: knitr
 SystemRequirements: Java (>= 8), a running H2O cluster matching the h2o
         R package version
 NeedsCompilation: no
-Packaged: 2026-09-29 07:07:52 UTC; carlosortega
+Packaged: 2026-11-10 19:42:49 UTC; carlosortega
 Author: Carlos Ortega [aut, cre]
 Maintainer: Carlos Ortega <cof@qualityexcellence.es>
 Repository: CRAN
-Date/Publication: 2026-10-15 15:20:15 UTC
+Date/Publication: 2026-11-12 16:40:02 UTC

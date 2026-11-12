@@ -95,6 +95,9 @@ h2o_available <- function() {
     if (!identical(head[[1L]], as.name("::")) || as.character(head[[2L]]) != "h2o") stop("Only whitelisted h2o:: calls are allowed.")
     fn <- as.character(head[[3L]])
   } else fn <- as.character(head)
+  if (fn %in% c("h_row_number", "h_roll_mean", "h_min_rank") && !is.null(f)) {
+    return(.window_eval(e, .window_context(f, character()), env))
+  }
   if (fn == "h_case_when") {
     clauses <- as.list(e)[-1L]
     default <- if (".default" %in% names(clauses)) .eval_h2o(clauses[[".default"]], f, env, bindings) else NA

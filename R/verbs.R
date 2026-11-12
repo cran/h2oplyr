@@ -23,10 +23,11 @@ when_all <- function(...) {
   x <- list(...); if(!length(x)) stop("At least one condition is required.")
   Reduce(`&`,x)
 }
-h_mutate <- function(.data, ...) {
+h_mutate <- function(.data, ..., .by = NULL) {
   .data <- .tbl(.data)
-  .no_groups(.data,"h_mutate")
+  groups <- .group_spec(.data, substitute(.by), parent.frame())
   dots <- as.list(substitute(list(...)))[-1L]
+  if (length(groups)) return(.grouped_mutate(.data, dots, groups, parent.frame()))
   for (i in seq_along(dots)) {
     e <- dots[[i]]
     if (is.call(e) && identical(e[[1L]],as.name("h_across"))) {
@@ -44,6 +45,7 @@ h_mutate <- function(.data, ...) {
   .data
 }
 h_transmute <- function(.data, ...) {
+  .no_groups(.tbl(.data), "h_transmute")
   dots <- as.list(substitute(list(...)))[-1L]
   .named(dots)
   out <- eval(substitute(h_mutate(.data,...)),parent.frame())

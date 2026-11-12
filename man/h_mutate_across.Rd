@@ -1,7 +1,7 @@
 \name{h_mutate_across}
 \alias{h_mutate_across}
 \title{H2O mutate across}
-\description{Row data remain in H2O. Base R handles expressions, column names, configuration and remote object handles. H2O may return schema metadata or scalar reductions to the client; no local table transformation is performed. Mutation is ungrouped. Named expressions are evaluated sequentially. The closed expression interpreter accepts arithmetic, comparisons, is.na, membership in literal vectors, supported H2O math/text conversions and h2oplyr vector helpers. Unknown functions and other package namespaces are rejected. One-argument across closures are interpreted, never executed over downloaded rows.}
+\description{Row data remain in H2O. Base R handles expressions, column names, configuration and remote object handles. H2O may return schema metadata or scalar reductions to the client; no local table transformation is performed. General mutation is ungrouped. h_mutate additionally supports grouped window calls through h_group_by or .by (see below). Named expressions are evaluated sequentially. The closed expression interpreter accepts arithmetic, comparisons, is.na, membership in literal vectors, supported H2O math/text conversions and h2oplyr vector helpers. Unknown functions and other package namespaces are rejected. One-argument across closures are interpreted, never executed over downloaded rows.}
 \usage{
 h_mutate_across(.data, .cols, .fns, .names = "{col}_{fn}")
 }

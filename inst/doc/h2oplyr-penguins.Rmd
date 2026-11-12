@@ -46,11 +46,12 @@ pre code { overflow-wrap: normal; }
 .result h3 { margin: 0 0 6px; font-size: 18px; }
 .result-meta { font-size: 13px; color: #586d78; margin: 0 0 16px; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
-th { background: #eaf3f5; color: #174c5c; text-align: left; font-weight: 650; }
+table { width: auto; max-width: 100%; border-collapse: collapse; margin: 12px auto 6px; font-size: 14px; }
+th { background: #eaf3f5; color: #174c5c; text-align: center; font-weight: 650; }
 th, td { border-bottom: 1px solid #dce6e9; padding: 11px 12px; vertical-align: top; }
 tbody tr:nth-child(even) { background: #f7fafb; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.result th, .result td { text-align: center; vertical-align: middle; }
+.num { text-align: center; font-variant-numeric: tabular-nums; }
 .missing { color: #926022; font-style: italic; }
 .check { color: #275d43; background: #edf6ef; border-left: 4px solid #477c58;
   padding: 10px 15px; margin: 16px 0; font-size: 14px; }
@@ -340,8 +341,9 @@ Named mutations run sequentially, so a later expression can use a newly created
 column. Arithmetic, comparisons, selected H2O mathematical and text functions,
 and the package's vector helpers are supported. Calls to arbitrary R functions
 or other package namespaces raise an error. `h_transmute()` retains only the
-new named columns. Grouped mutation is not implemented: ungroup explicitly
-rather than accidentally calculate a global value inside a group.
+new named columns. Grouped mutation supports the five window helpers introduced below. Other
+grouped expressions are rejected: derive ordinary columns before grouping,
+or ungroup explicitly when a global calculation is intended.
 
 The native `|>` pipe and the package's `%.%` pipe can both chain these verbs.
 
@@ -535,11 +537,149 @@ or distributed layouts. `with_ties = TRUE` can return more than `n` rows.
 
 Lag, lead, cumulative operations and `h_fill()` use current row order. Penguins
 are not a longitudinal time series: the lag example illustrates an ordered
-comparison, not a temporal interpretation. Grouped windows and grouped slicing
-are rejected in this release.
+comparison, not a temporal interpretation. Grouped windows are covered next.
+Grouped slicing, filling and cumulative helpers remain unsupported.
 
 ::: {.caja-clave}
 **Takeaway.** A seeded sample is reproducible within the documented setting. A lag is meaningful only after choosing an order; penguins here are not a longitudinal panel.
+:::
+
+## Windows within each group
+
+Version 0.3.0 adds grouped `h_mutate()` for five direct window calls:
+`h_lag()`, `h_lead()`, `h_roll_mean()`, `h_min_rank()` and `h_row_number()`.
+Use `.by` for one call, or `h_group_by()` for persistent grouping. Each window
+follows the existing row order **within its group**, even when groups are
+interleaved. The output preserves the input row order. Missing keys are valid
+grouping values; multiple grouping columns are supported.
+
+### Compare penguins within species
+
+A complete ordering key makes the meaning of “previous” unambiguous. Here the
+original row position breaks mass ties; this is an ordered comparison, not a
+longitudinal analysis of individual birds.
+
+```{r species-windows}
+# Number the input rows before sorting, then use that position to break ties.
+species_order <- penguins |>
+  h_filter(!is.na(body_mass_g)) |>
+  h_mutate(input_row = h_row_number()) |>
+  h_arrange(species, body_mass_g, input_row)
+species_windows <- species_order |>
+  h_group_by(species) |>
+  h_mutate(previous_mass = h_lag(body_mass_g),
+           mean_last_three = h_roll_mean(body_mass_g, k = 3),
+           mass_rank = h_min_rank(desc(body_mass_g)),
+           position = h_row_number())
+# Grouping persists until removed explicitly.
+stopifnot(identical(h_group_vars(species_windows), "species"))
+first_in_species <- species_windows |> h_ungroup() |> h_filter(position == 1)
+```
+
+```{r species-windows-output, echo=FALSE, results="asis"}
+preview_h2o(species_windows, "Windows within species",
+  c("species", "body_mass_g", "previous_mass", "mean_last_three", "mass_rank", "position"))
+verify_output(nrow(as_h2o(first_in_species)) == 3 &&
+  h2o::h2o.all(is.na(as_h2o(first_in_species)[, "previous_mass"])) &&
+  h2o::h2o.all(as_h2o(first_in_species)[, "body_mass_g"] ==
+    as_h2o(first_in_species)[, "mean_last_three"]),
+  "Each species starts with a missing lag and a one-row partial mean.")
+```
+
+The first bird in each species has no predecessor. Its partial rolling mean
+therefore equals its own mass. `mass_rank` runs from the heaviest mass downwards;
+equal masses share the minimum rank and leave gaps after ties.
+
+### Make missing values and ties visible
+
+The package also includes a small synthetic fixture with interleaved groups,
+missing keys, missing amounts and tied amounts. Its independently calculated
+expected columns are used by the regression tests.
+
+```{r window-boundaries}
+reference <- h2o::h2o.uploadFile(
+  system.file("extdata", "windows.csv", package = "h2oplyr"),
+  na.strings = "NA",
+  col.types = c("numeric", "enum", "enum", rep("numeric", 15)))
+observations <- h2o_tbl(reference[, c("id", "group", "subgroup", "amount")])
+windows <- h_mutate(observations,
+  prev = h_lag(amount), next_amount = h_lead(amount),
+  roll = h_roll_mean(amount, k = 3),
+  roll_rm = h_roll_mean(amount, k = 3, na.rm = TRUE),
+  full = h_roll_mean(amount, k = 3, partial = FALSE),
+  rank_desc = h_min_rank(desc(amount)), row = h_row_number(),
+  .by = c(group, subgroup))
+# .by does not attach grouping to the result.
+stopifnot(length(h_group_vars(windows)) == 0)
+example_group <- h_filter(windows, group == "A", subgroup == "x")
+```
+
+```{r window-boundaries-output, echo=FALSE, results="asis"}
+preview_h2o(example_group, "Ties and lags in one group",
+  c("id", "amount", "prev", "roll", "rank_desc", "row"), rows = 5)
+preview_h2o(example_group, "Three rolling-mean policies",
+  c("id", "amount", "roll", "roll_rm", "full"), rows = 5)
+window_frame <- as_h2o(windows)
+for (column in c("prev", "roll", "roll_rm", "full", "rank_desc", "row")) {
+  stopifnot(h2o::h2o.all(is.na(window_frame[, column]) == is.na(reference[, column])),
+    h2o::h2o.sum(abs(window_frame[, column] - reference[, column]), na.rm = TRUE) < 1e-8)
+}
+verify_output(h2o::h2o.all(window_frame[, "id"] == reference[, "id"]),
+  "All six window columns match the independent reference, including missing values; input order is unchanged.")
+```
+
+The amounts 20 and 20 both receive rank 2; amount 10 receives rank 4. A missing
+amount remains unranked. A lag shifts a missing value as it would any other value.
+The rolling window includes the current row and up to two preceding rows:
+
+| Option | Behavior |
+|:--|:--|
+| `partial = TRUE` (default) | Use the available prefix at the beginning of each group. |
+| `partial = FALSE` | Return `NA` until the group has at least `k` rows. |
+| `na.rm = FALSE` (default) | Any missing amount within the window makes the mean missing. |
+| `na.rm = TRUE` | Average observed amounts; return `NA` for an all-missing window. |
+
+With both `partial = FALSE` and `na.rm = TRUE`, completeness still means `k`
+**rows**, not `k` observed amounts. The implementation composes remote shifts;
+its work grows with the window width. It is intended for short windows such as
+`k = 3`, and makes no constant-cost or comparative performance claim.
+
+### A transaction-shaped workflow
+
+The same operations express a typical transaction task: remove missing amounts,
+order by customer, time and transaction ID, compute windows, then aggregate.
+For this small executable illustration, the synthetic row ID also supplies the
+time order; these are not real transaction data.
+
+```{r transaction-windows}
+transactions <- observations |>
+  h_select(id, group, amount) |>
+  h_rename(txn_id = id, customer_id = group) |>
+  h_mutate(txn_time = txn_id) |>
+  h_filter(!is.na(amount)) |>
+  h_arrange(customer_id, txn_time, txn_id)
+transaction_windows <- h_mutate(transactions,
+  prev_amount = h_lag(amount),
+  roll_mean = h_roll_mean(amount, k = 3, partial = TRUE),
+  rank_amount = h_min_rank(desc(amount)),
+  .by = customer_id)
+customer_summary <- h_summarize(transaction_windows,
+  observations = n(), average_window = mean(roll_mean), .by = customer_id)
+```
+
+```{r transaction-windows-output, echo=FALSE, results="asis"}
+preview_h2o(customer_summary, "Aggregate after customer windows")
+verify_output(h2o::h2o.sum(as_h2o(customer_summary)[, "observations"]) ==
+  nrow(as_h2o(transactions)), "Every retained transaction contributes to a customer summary.")
+```
+
+::: {.caja-clave}
+**Takeaway.** Set a complete row order before computing windows. Grouped mutation
+accepts direct calls to the five supported helpers; it does not evaluate arbitrary
+R expressions. Derive other columns before grouping. Group keys cannot be
+overwritten. Grouped cumulative helpers and large-window optimizations are
+outside this release. `h_row_number()` is a zero-argument mutation helper;
+`h_min_rank()` and `h_roll_mean()` accept one numeric H2O column.
 :::
 
 ## Validation and current boundaries
@@ -563,8 +703,8 @@ source(system.file("examples", "regressions.R", package = "h2oplyr"))
 
 This package is an explicit subset of tidy-style manipulation, not a complete
 drop-in replacement for `dplyr` or `tidytable`. It has no local rowwise/map backend,
-non-equality joins, automatic list-column nesting, arbitrary R callbacks, grouped
-mutation or implicit duplicate-cell pivot aggregation. `h_bind_rows()` requires
+non-equality joins, automatic list-column nesting, arbitrary R callbacks, general grouped
+mutation beyond the five supported window helpers, or implicit duplicate-cell pivot aggregation. `h_bind_rows()` requires
 matching column-name sets. `h_nest_by()` returns a list of remote group handles
 and is intended for a modest number of groups.
 
@@ -577,8 +717,8 @@ loading, printing, or running its ordinary examples.
 ## Reproduce and interpret the checks
 
 The green checks accompany the tutorial's calculations. The installed package
-also contains 73 asserted API examples and semantic regression tests; those are
-a separate suite, not 73 examples all reproduced on this page. The commands in
+also contains 76 asserted API examples and semantic regression tests; those are
+a separate suite, not 76 examples all reproduced on this page. The commands in
 “Connect once” and “Validation” are instructions to run yourself, rather than
 claims that this HTML launched a cluster or reran the complete package test suite.
 
@@ -616,3 +756,6 @@ and Palmer Station LTER. The research description is Gorman KB, Williams TD,
 Fraser WR (2014), [doi:10.1371/journal.pone.0090081](https://doi.org/10.1371/journal.pone.0090081).
 The bundled CSV's source, retrieval date and SHA-256 are recorded in
 `system.file("extdata", "PROVENANCE.md", package = "h2oplyr")`.
+
+The synthetic `windows.csv` fixture was authored for h2oplyr and is covered by
+the package MIT license. It contains no personal or transactional records.

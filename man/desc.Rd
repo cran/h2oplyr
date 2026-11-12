@@ -8,7 +8,7 @@ desc(x)
 \arguments{
 \item{x}{An H2OFrame, an h2o_tbl, or (for selection helpers) a character pattern or vector. Local tables are not accepted.}
 }
-\value{Its input, unchanged; interpreted specially by h_arrange.}
+\value{Its input, unchanged; interpreted specially by h_arrange and h_min_rank.}
 \examples{
 # Connect explicitly before running these examples:
 # h2o::h2o.init(nthreads = 2, max_mem_size = "2G")

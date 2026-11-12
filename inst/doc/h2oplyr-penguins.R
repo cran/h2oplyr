@@ -245,6 +245,81 @@ verify_output(nrow(as_h2o(sample_penguins)) == 12 && h2o::h2o.sum(is.na(first_la
     ordered_frame[1:(nrow(ordered_frame)-1), ][, "body_mass_g"])) < 1e-8,
   "Sample size is 12; the first lag is missing and every later lag matches the preceding mass.")
 
+## ----species-windows----------------------------------------------------------
+# Number the input rows before sorting, then use that position to break ties.
+species_order <- penguins |>
+  h_filter(!is.na(body_mass_g)) |>
+  h_mutate(input_row = h_row_number()) |>
+  h_arrange(species, body_mass_g, input_row)
+species_windows <- species_order |>
+  h_group_by(species) |>
+  h_mutate(previous_mass = h_lag(body_mass_g),
+           mean_last_three = h_roll_mean(body_mass_g, k = 3),
+           mass_rank = h_min_rank(desc(body_mass_g)),
+           position = h_row_number())
+# Grouping persists until removed explicitly.
+stopifnot(identical(h_group_vars(species_windows), "species"))
+first_in_species <- species_windows |> h_ungroup() |> h_filter(position == 1)
+
+## ----species-windows-output, echo=FALSE, results="asis"-----------------------
+preview_h2o(species_windows, "Windows within species",
+  c("species", "body_mass_g", "previous_mass", "mean_last_three", "mass_rank", "position"))
+verify_output(nrow(as_h2o(first_in_species)) == 3 &&
+  h2o::h2o.all(is.na(as_h2o(first_in_species)[, "previous_mass"])) &&
+  h2o::h2o.all(as_h2o(first_in_species)[, "body_mass_g"] ==
+    as_h2o(first_in_species)[, "mean_last_three"]),
+  "Each species starts with a missing lag and a one-row partial mean.")
+
+## ----window-boundaries--------------------------------------------------------
+reference <- h2o::h2o.uploadFile(
+  system.file("extdata", "windows.csv", package = "h2oplyr"),
+  na.strings = "NA",
+  col.types = c("numeric", "enum", "enum", rep("numeric", 15)))
+observations <- h2o_tbl(reference[, c("id", "group", "subgroup", "amount")])
+windows <- h_mutate(observations,
+  prev = h_lag(amount), next_amount = h_lead(amount),
+  roll = h_roll_mean(amount, k = 3),
+  roll_rm = h_roll_mean(amount, k = 3, na.rm = TRUE),
+  full = h_roll_mean(amount, k = 3, partial = FALSE),
+  rank_desc = h_min_rank(desc(amount)), row = h_row_number(),
+  .by = c(group, subgroup))
+# .by does not attach grouping to the result.
+stopifnot(length(h_group_vars(windows)) == 0)
+example_group <- h_filter(windows, group == "A", subgroup == "x")
+
+## ----window-boundaries-output, echo=FALSE, results="asis"---------------------
+preview_h2o(example_group, "Ties and lags in one group",
+  c("id", "amount", "prev", "roll", "rank_desc", "row"), rows = 5)
+preview_h2o(example_group, "Three rolling-mean policies",
+  c("id", "amount", "roll", "roll_rm", "full"), rows = 5)
+window_frame <- as_h2o(windows)
+for (column in c("prev", "roll", "roll_rm", "full", "rank_desc", "row")) {
+  stopifnot(h2o::h2o.all(is.na(window_frame[, column]) == is.na(reference[, column])),
+    h2o::h2o.sum(abs(window_frame[, column] - reference[, column]), na.rm = TRUE) < 1e-8)
+}
+verify_output(h2o::h2o.all(window_frame[, "id"] == reference[, "id"]),
+  "All six window columns match the independent reference, including missing values; input order is unchanged.")
+
+## ----transaction-windows------------------------------------------------------
+transactions <- observations |>
+  h_select(id, group, amount) |>
+  h_rename(txn_id = id, customer_id = group) |>
+  h_mutate(txn_time = txn_id) |>
+  h_filter(!is.na(amount)) |>
+  h_arrange(customer_id, txn_time, txn_id)
+transaction_windows <- h_mutate(transactions,
+  prev_amount = h_lag(amount),
+  roll_mean = h_roll_mean(amount, k = 3, partial = TRUE),
+  rank_amount = h_min_rank(desc(amount)),
+  .by = customer_id)
+customer_summary <- h_summarize(transaction_windows,
+  observations = n(), average_window = mean(roll_mean), .by = customer_id)
+
+## ----transaction-windows-output, echo=FALSE, results="asis"-------------------
+preview_h2o(customer_summary, "Aggregate after customer windows")
+verify_output(h2o::h2o.sum(as_h2o(customer_summary)[, "observations"]) ==
+  nrow(as_h2o(transactions)), "Every retained transaction contributes to a customer summary.")
+
 ## ----testing-instructions, eval=FALSE-----------------------------------------
 # h2o::h2o.init(nthreads = 2, max_mem_size = "2G")
 # library(h2oplyr)

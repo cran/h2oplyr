@@ -19,7 +19,7 @@ run_regression('strict column selection and preserved grouping',{
   stopifnot(identical(h_group_vars(h_rename(h_group_by(x,grp),group=grp)),'group'))
   must_error(h_group_by(x,g=grp),'Renaming')
   must_error(h_rename(x,grp=id),'unique')
-  must_error(h_mutate(h_group_by(x,grp),z=y),'grouped')
+  must_error(h_mutate(h_group_by(x,grp),z=y),'Grouped')
 })
 run_regression('missing comparisons and filters',{
   rows(h_filter(x,x==NA),0)
@@ -126,4 +126,5 @@ run_regression('categorical conditions retain labels',{
  stopifnot(h2o::h2o.sum(is.na(z))==1)
 })
 
+source(system.file('examples', 'windows-regressions.R', package='h2oplyr'), local=TRUE)
 cat('All semantic regressions passed.\n')

@@ -362,12 +362,21 @@ observations</a></li>
 long and back</a></li>
 <li><a href="#sampling-ties-and-order-dependent-calculations" id="toc-sampling-ties-and-order-dependent-calculations"><span class="toc-section-number">10</span> Sampling, ties and order-dependent
 calculations</a></li>
-<li><a href="#validation-and-current-boundaries" id="toc-validation-and-current-boundaries"><span class="toc-section-number">11</span> Validation and current
+<li><a href="#windows-within-each-group" id="toc-windows-within-each-group"><span class="toc-section-number">11</span> Windows within each group</a>
+<ul>
+<li><a href="#compare-penguins-within-species" id="toc-compare-penguins-within-species"><span class="toc-section-number">11.1</span> Compare penguins within
+species</a></li>
+<li><a href="#make-missing-values-and-ties-visible" id="toc-make-missing-values-and-ties-visible"><span class="toc-section-number">11.2</span> Make missing values and ties
+visible</a></li>
+<li><a href="#a-transaction-shaped-workflow" id="toc-a-transaction-shaped-workflow"><span class="toc-section-number">11.3</span> A transaction-shaped
+workflow</a></li>
+</ul></li>
+<li><a href="#validation-and-current-boundaries" id="toc-validation-and-current-boundaries"><span class="toc-section-number">12</span> Validation and current
 boundaries</a></li>
-<li><a href="#reproduce-and-interpret-the-checks" id="toc-reproduce-and-interpret-the-checks"><span class="toc-section-number">12</span> Reproduce and interpret the
+<li><a href="#reproduce-and-interpret-the-checks" id="toc-reproduce-and-interpret-the-checks"><span class="toc-section-number">13</span> Reproduce and interpret the
 checks</a></li>
-<li><a href="#short-glossary" id="toc-short-glossary"><span class="toc-section-number">13</span> Short glossary</a></li>
-<li><a href="#data-provenance" id="toc-data-provenance"><span class="toc-section-number">14</span> Data provenance</a></li>
+<li><a href="#short-glossary" id="toc-short-glossary"><span class="toc-section-number">14</span> Short glossary</a></li>
+<li><a href="#data-provenance" id="toc-data-provenance"><span class="toc-section-number">15</span> Data provenance</a></li>
 </ul>
 </div>
 
@@ -394,11 +403,12 @@ padding: 20px; background: #fff; }
 .result h3 { margin: 0 0 6px; font-size: 18px; }
 .result-meta { font-size: 13px; color: #586d78; margin: 0 0 16px; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
-th { background: #eaf3f5; color: #174c5c; text-align: left; font-weight: 650; }
+table { width: auto; max-width: 100%; border-collapse: collapse; margin: 12px auto 6px; font-size: 14px; }
+th { background: #eaf3f5; color: #174c5c; text-align: center; font-weight: 650; }
 th, td { border-bottom: 1px solid #dce6e9; padding: 11px 12px; vertical-align: top; }
 tbody tr:nth-child(even) { background: #f7fafb; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.result th, .result td { text-align: center; vertical-align: middle; }
+.num { text-align: center; font-variant-numeric: tabular-nums; }
 .missing { color: #926022; font-style: italic; }
 .check { color: #275d43; background: #edf6ef; border-left: 4px solid #477c58;
 padding: 10px 15px; margin: 16px 0; font-size: 14px; }
@@ -1341,8 +1351,10 @@ newly created column. Arithmetic, comparisons, selected H2O mathematical
 and text functions, and the package’s vector helpers are supported.
 Calls to arbitrary R functions or other package namespaces raise an
 error. <code>h_transmute()</code> retains only the new named columns.
-Grouped mutation is not implemented: ungroup explicitly rather than
-accidentally calculate a global value inside a group.</p>
+Grouped mutation supports the five window helpers introduced below.
+Other grouped expressions are rejected: derive ordinary columns before
+grouping, or ungroup explicitly when a global calculation is
+intended.</p>
 <p>The native <code>|&gt;</code> pipe and the package’s <code>%.%</code>
 pipe can both chain these verbs.</p>
 <div class="caja-clave">
@@ -2232,16 +2244,606 @@ rows.</p>
 <p>Lag, lead, cumulative operations and <code>h_fill()</code> use
 current row order. Penguins are not a longitudinal time series: the lag
 example illustrates an ordered comparison, not a temporal
-interpretation. Grouped windows and grouped slicing are rejected in this
-release.</p>
+interpretation. Grouped windows are covered next. Grouped slicing,
+filling and cumulative helpers remain unsupported.</p>
 <div class="caja-clave">
 <p><strong>Takeaway.</strong> A seeded sample is reproducible within the
 documented setting. A lag is meaningful only after choosing an order;
 penguins here are not a longitudinal panel.</p>
 </div>
 </div>
-<div id="validation-and-current-boundaries" class="section level2" number="11">
-<h2><span class="header-section-number">11</span> Validation and current
+<div id="windows-within-each-group" class="section level2" number="11">
+<h2><span class="header-section-number">11</span> Windows within each
+group</h2>
+<p>Version 0.3.0 adds grouped <code>h_mutate()</code> for five direct
+window calls: <code>h_lag()</code>, <code>h_lead()</code>,
+<code>h_roll_mean()</code>, <code>h_min_rank()</code> and
+<code>h_row_number()</code>. Use <code>.by</code> for one call, or
+<code>h_group_by()</code> for persistent grouping. Each window follows
+the existing row order <strong>within its group</strong>, even when
+groups are interleaved. The output preserves the input row order.
+Missing keys are valid grouping values; multiple grouping columns are
+supported.</p>
+<div id="compare-penguins-within-species" class="section level3" number="11.1">
+<h3><span class="header-section-number">11.1</span> Compare penguins
+within species</h3>
+<p>A complete ordering key makes the meaning of “previous” unambiguous.
+Here the original row position breaks mass ties; this is an ordered
+comparison, not a longitudinal analysis of individual birds.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="co"># Number the input rows before sorting, then use that position to break ties.</span></span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>species_order <span class="ot">&lt;-</span> penguins <span class="sc">|&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="fu">h_filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(body_mass_g)) <span class="sc">|&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="fu">h_mutate</span>(<span class="at">input_row =</span> <span class="fu">h_row_number</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="fu">h_arrange</span>(species, body_mass_g, input_row)</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>species_windows <span class="ot">&lt;-</span> species_order <span class="sc">|&gt;</span></span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a>  <span class="fu">h_group_by</span>(species) <span class="sc">|&gt;</span></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a>  <span class="fu">h_mutate</span>(<span class="at">previous_mass =</span> <span class="fu">h_lag</span>(body_mass_g),</span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a>           <span class="at">mean_last_three =</span> <span class="fu">h_roll_mean</span>(body_mass_g, <span class="at">k =</span> <span class="dv">3</span>),</span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a>           <span class="at">mass_rank =</span> <span class="fu">h_min_rank</span>(<span class="fu">desc</span>(body_mass_g)),</span>
+<span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a>           <span class="at">position =</span> <span class="fu">h_row_number</span>())</span>
+<span id="cb13-12"><a href="#cb13-12" tabindex="-1"></a><span class="co"># Grouping persists until removed explicitly.</span></span>
+<span id="cb13-13"><a href="#cb13-13" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">identical</span>(<span class="fu">h_group_vars</span>(species_windows), <span class="st">&quot;species&quot;</span>))</span>
+<span id="cb13-14"><a href="#cb13-14" tabindex="-1"></a>first_in_species <span class="ot">&lt;-</span> species_windows <span class="sc">|&gt;</span> <span class="fu">h_ungroup</span>() <span class="sc">|&gt;</span> <span class="fu">h_filter</span>(position <span class="sc">==</span> <span class="dv">1</span>)</span></code></pre></div>
+<div class="result">
+<h3>
+Windows within species
+</h3>
+<p class="result-meta">
+H2OFrame · 342 rows × 13 columns · showing 4 rows and 6 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+species
+</th>
+<th scope="col" class="num">
+body_mass_g
+</th>
+<th scope="col" class="num">
+previous_mass
+</th>
+<th scope="col" class="num">
+mean_last_three
+</th>
+<th scope="col" class="num">
+mass_rank
+</th>
+<th scope="col" class="num">
+position
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+150
+</td>
+<td class="num">
+1
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+150
+</td>
+<td class="num">
+2
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+2850
+</td>
+<td class="num">
+2866.67
+</td>
+<td class="num">
+147
+</td>
+<td class="num">
+3
+</td>
+</tr>
+<tr>
+<td>
+Adelie
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+2900
+</td>
+<td class="num">
+2883.33
+</td>
+<td class="num">
+147
+</td>
+<td class="num">
+4
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Each species starts with a missing lag and a
+one-row partial mean.
+</p>
+<p>The first bird in each species has no predecessor. Its partial
+rolling mean therefore equals its own mass. <code>mass_rank</code> runs
+from the heaviest mass downwards; equal masses share the minimum rank
+and leave gaps after ties.</p>
+</div>
+<div id="make-missing-values-and-ties-visible" class="section level3" number="11.2">
+<h3><span class="header-section-number">11.2</span> Make missing values
+and ties visible</h3>
+<p>The package also includes a small synthetic fixture with interleaved
+groups, missing keys, missing amounts and tied amounts. Its
+independently calculated expected columns are used by the regression
+tests.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>reference <span class="ot">&lt;-</span> h2o<span class="sc">::</span><span class="fu">h2o.uploadFile</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  <span class="fu">system.file</span>(<span class="st">&quot;extdata&quot;</span>, <span class="st">&quot;windows.csv&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>),</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">na.strings =</span> <span class="st">&quot;NA&quot;</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">col.types =</span> <span class="fu">c</span>(<span class="st">&quot;numeric&quot;</span>, <span class="st">&quot;enum&quot;</span>, <span class="st">&quot;enum&quot;</span>, <span class="fu">rep</span>(<span class="st">&quot;numeric&quot;</span>, <span class="dv">15</span>)))</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>observations <span class="ot">&lt;-</span> <span class="fu">h2o_tbl</span>(reference[, <span class="fu">c</span>(<span class="st">&quot;id&quot;</span>, <span class="st">&quot;group&quot;</span>, <span class="st">&quot;subgroup&quot;</span>, <span class="st">&quot;amount&quot;</span>)])</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>windows <span class="ot">&lt;-</span> <span class="fu">h_mutate</span>(observations,</span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>  <span class="at">prev =</span> <span class="fu">h_lag</span>(amount), <span class="at">next_amount =</span> <span class="fu">h_lead</span>(amount),</span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a>  <span class="at">roll =</span> <span class="fu">h_roll_mean</span>(amount, <span class="at">k =</span> <span class="dv">3</span>),</span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>  <span class="at">roll_rm =</span> <span class="fu">h_roll_mean</span>(amount, <span class="at">k =</span> <span class="dv">3</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>  <span class="at">full =</span> <span class="fu">h_roll_mean</span>(amount, <span class="at">k =</span> <span class="dv">3</span>, <span class="at">partial =</span> <span class="cn">FALSE</span>),</span>
+<span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a>  <span class="at">rank_desc =</span> <span class="fu">h_min_rank</span>(<span class="fu">desc</span>(amount)), <span class="at">row =</span> <span class="fu">h_row_number</span>(),</span>
+<span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a>  <span class="at">.by =</span> <span class="fu">c</span>(group, subgroup))</span>
+<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a><span class="co"># .by does not attach grouping to the result.</span></span>
+<span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">length</span>(<span class="fu">h_group_vars</span>(windows)) <span class="sc">==</span> <span class="dv">0</span>)</span>
+<span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a>example_group <span class="ot">&lt;-</span> <span class="fu">h_filter</span>(windows, group <span class="sc">==</span> <span class="st">&quot;A&quot;</span>, subgroup <span class="sc">==</span> <span class="st">&quot;x&quot;</span>)</span></code></pre></div>
+<div class="result">
+<h3>
+Ties and lags in one group
+</h3>
+<p class="result-meta">
+H2OFrame · 5 rows × 11 columns · showing 5 rows and 6 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col" class="num">
+id
+</th>
+<th scope="col" class="num">
+amount
+</th>
+<th scope="col" class="num">
+prev
+</th>
+<th scope="col" class="num">
+roll
+</th>
+<th scope="col" class="num">
+rank_desc
+</th>
+<th scope="col" class="num">
+row
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="num">
+1
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+4
+</td>
+<td class="num">
+1
+</td>
+</tr>
+<tr>
+<td class="num">
+3
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+15
+</td>
+<td class="num">
+2
+</td>
+<td class="num">
+2
+</td>
+</tr>
+<tr>
+<td class="num">
+6
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+16.67
+</td>
+<td class="num">
+2
+</td>
+<td class="num">
+3
+</td>
+</tr>
+<tr>
+<td class="num">
+8
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+4
+</td>
+</tr>
+<tr>
+<td class="num">
+13
+</td>
+<td class="num">
+40
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+1
+</td>
+<td class="num">
+5
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="result">
+<h3>
+Three rolling-mean policies
+</h3>
+<p class="result-meta">
+H2OFrame · 5 rows × 11 columns · showing 5 rows and 5 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col" class="num">
+id
+</th>
+<th scope="col" class="num">
+amount
+</th>
+<th scope="col" class="num">
+roll
+</th>
+<th scope="col" class="num">
+roll_rm
+</th>
+<th scope="col" class="num">
+full
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="num">
+1
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+10
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+<tr>
+<td class="num">
+3
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+15
+</td>
+<td class="num">
+15
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+<tr>
+<td class="num">
+6
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+16.67
+</td>
+<td class="num">
+16.67
+</td>
+<td class="num">
+16.67
+</td>
+</tr>
+<tr>
+<td class="num">
+8
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+20
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+<tr>
+<td class="num">
+13
+</td>
+<td class="num">
+40
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+<td class="num">
+30
+</td>
+<td class="num">
+<span class="missing">NA</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> All six window columns match the independent
+reference, including missing values; input order is unchanged.
+</p>
+<p>The amounts 20 and 20 both receive rank 2; amount 10 receives rank 4.
+A missing amount remains unranked. A lag shifts a missing value as it
+would any other value. The rolling window includes the current row and
+up to two preceding rows:</p>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Option</th>
+<th align="left">Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><code>partial = TRUE</code> (default)</td>
+<td align="left">Use the available prefix at the beginning of each
+group.</td>
+</tr>
+<tr class="even">
+<td align="left"><code>partial = FALSE</code></td>
+<td align="left">Return <code>NA</code> until the group has at least
+<code>k</code> rows.</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>na.rm = FALSE</code> (default)</td>
+<td align="left">Any missing amount within the window makes the mean
+missing.</td>
+</tr>
+<tr class="even">
+<td align="left"><code>na.rm = TRUE</code></td>
+<td align="left">Average observed amounts; return <code>NA</code> for an
+all-missing window.</td>
+</tr>
+</tbody>
+</table>
+<p>With both <code>partial = FALSE</code> and <code>na.rm = TRUE</code>,
+completeness still means <code>k</code> <strong>rows</strong>, not
+<code>k</code> observed amounts. The implementation composes remote
+shifts; its work grows with the window width. It is intended for short
+windows such as <code>k = 3</code>, and makes no constant-cost or
+comparative performance claim.</p>
+</div>
+<div id="a-transaction-shaped-workflow" class="section level3" number="11.3">
+<h3><span class="header-section-number">11.3</span> A transaction-shaped
+workflow</h3>
+<p>The same operations express a typical transaction task: remove
+missing amounts, order by customer, time and transaction ID, compute
+windows, then aggregate. For this small executable illustration, the
+synthetic row ID also supplies the time order; these are not real
+transaction data.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>transactions <span class="ot">&lt;-</span> observations <span class="sc">|&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>  <span class="fu">h_select</span>(id, group, amount) <span class="sc">|&gt;</span></span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>  <span class="fu">h_rename</span>(<span class="at">txn_id =</span> id, <span class="at">customer_id =</span> group) <span class="sc">|&gt;</span></span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>  <span class="fu">h_mutate</span>(<span class="at">txn_time =</span> txn_id) <span class="sc">|&gt;</span></span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a>  <span class="fu">h_filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(amount)) <span class="sc">|&gt;</span></span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a>  <span class="fu">h_arrange</span>(customer_id, txn_time, txn_id)</span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a>transaction_windows <span class="ot">&lt;-</span> <span class="fu">h_mutate</span>(transactions,</span>
+<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a>  <span class="at">prev_amount =</span> <span class="fu">h_lag</span>(amount),</span>
+<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a>  <span class="at">roll_mean =</span> <span class="fu">h_roll_mean</span>(amount, <span class="at">k =</span> <span class="dv">3</span>, <span class="at">partial =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a>  <span class="at">rank_amount =</span> <span class="fu">h_min_rank</span>(<span class="fu">desc</span>(amount)),</span>
+<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a>  <span class="at">.by =</span> customer_id)</span>
+<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a>customer_summary <span class="ot">&lt;-</span> <span class="fu">h_summarize</span>(transaction_windows,</span>
+<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a>  <span class="at">observations =</span> <span class="fu">n</span>(), <span class="at">average_window =</span> <span class="fu">mean</span>(roll_mean), <span class="at">.by =</span> customer_id)</span></code></pre></div>
+<div class="result">
+<h3>
+Aggregate after customer windows
+</h3>
+<p class="result-meta">
+H2OFrame · 4 rows × 3 columns · showing 4 rows and 3 columns
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">
+customer_id
+</th>
+<th scope="col" class="num">
+observations
+</th>
+<th scope="col" class="num">
+average_window
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+A
+</td>
+<td class="num">
+8
+</td>
+<td class="num">
+16.17
+</td>
+</tr>
+<tr>
+<td>
+B
+</td>
+<td class="num">
+2
+</td>
+<td class="num">
+6.50
+</td>
+</tr>
+<tr>
+<td>
+D
+</td>
+<td class="num">
+1
+</td>
+<td class="num">
+4
+</td>
+</tr>
+<tr>
+<td>
+NA
+</td>
+<td class="num">
+2
+</td>
+<td class="num">
+5
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p class="check">
+<strong>Verified.</strong> Every retained transaction contributes to a
+customer summary.
+</p>
+<div class="caja-clave">
+<p><strong>Takeaway.</strong> Set a complete row order before computing
+windows. Grouped mutation accepts direct calls to the five supported
+helpers; it does not evaluate arbitrary R expressions. Derive other
+columns before grouping. Group keys cannot be overwritten. Grouped
+cumulative helpers and large-window optimizations are outside this
+release. <code>h_row_number()</code> is a zero-argument mutation helper;
+<code>h_min_rank()</code> and <code>h_roll_mean()</code> accept one
+numeric H2O column.</p>
+</div>
+</div>
+</div>
+<div id="validation-and-current-boundaries" class="section level2" number="12">
+<h2><span class="header-section-number">12</span> Validation and current
 boundaries</h2>
 <p>Every exported function has an executable example with an assertion.
 The package also includes regression tests for missing values,
@@ -2253,36 +2855,37 @@ maintainer-only download instrumentation is kept outside the
 package.</p>
 <p>Run all examples and regressions against a cluster you started
 explicitly:</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>h2o<span class="sc">::</span><span class="fu">h2o.init</span>(<span class="at">nthreads =</span> <span class="dv">2</span>, <span class="at">max_mem_size =</span> <span class="st">&quot;2G&quot;</span>)</span>
-<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="fu">library</span>(h2oplyr)</span>
-<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;examples.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span>
-<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="cf">for</span> (nm <span class="cf">in</span> <span class="fu">names</span>(examples)) <span class="fu">eval</span>(examples[[nm]])</span>
-<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;regressions.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span></code></pre></div>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a>h2o<span class="sc">::</span><span class="fu">h2o.init</span>(<span class="at">nthreads =</span> <span class="dv">2</span>, <span class="at">max_mem_size =</span> <span class="st">&quot;2G&quot;</span>)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="fu">library</span>(h2oplyr)</span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;examples.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="cf">for</span> (nm <span class="cf">in</span> <span class="fu">names</span>(examples)) <span class="fu">eval</span>(examples[[nm]])</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">system.file</span>(<span class="st">&quot;examples&quot;</span>, <span class="st">&quot;regressions.R&quot;</span>, <span class="at">package =</span> <span class="st">&quot;h2oplyr&quot;</span>))</span></code></pre></div>
 <p>This package is an explicit subset of tidy-style manipulation, not a
 complete drop-in replacement for <code>dplyr</code> or
 <code>tidytable</code>. It has no local rowwise/map backend,
 non-equality joins, automatic list-column nesting, arbitrary R
-callbacks, grouped mutation or implicit duplicate-cell pivot
-aggregation. <code>h_bind_rows()</code> requires matching column-name
-sets. <code>h_nest_by()</code> returns a list of remote group handles
-and is intended for a modest number of groups.</p>
+callbacks, general grouped mutation beyond the five supported window
+helpers, or implicit duplicate-cell pivot aggregation.
+<code>h_bind_rows()</code> requires matching column-name sets.
+<code>h_nest_by()</code> returns a list of remote group handles and is
+intended for a modest number of groups.</p>
 <p>When no cluster is connected, rebuilding this vignette retains the
 code but skips H2O execution. The distributed HTML was built against an
 explicitly connected server. The package never starts or shuts down a
 user’s cluster while loading, printing, or running its ordinary
 examples.</p>
 </div>
-<div id="reproduce-and-interpret-the-checks" class="section level2" number="12">
-<h2><span class="header-section-number">12</span> Reproduce and
+<div id="reproduce-and-interpret-the-checks" class="section level2" number="13">
+<h2><span class="header-section-number">13</span> Reproduce and
 interpret the checks</h2>
 <p>The green checks accompany the tutorial’s calculations. The installed
-package also contains 73 asserted API examples and semantic regression
-tests; those are a separate suite, not 73 examples all reproduced on
+package also contains 76 asserted API examples and semantic regression
+tests; those are a separate suite, not 76 examples all reproduced on
 this page. The commands in “Connect once” and “Validation” are
 instructions to run yourself, rather than claims that this HTML launched
 a cluster or reran the complete package test suite.</p>
 <p class="check">
-<strong>Executed with H2O.</strong> R 4.6.1; h2oplyr 0.2.6; h2o
+<strong>Executed with H2O.</strong> R 4.6.1; h2oplyr 0.3.0; h2o
 3.44.0.3. All tutorial assertions completed during rendering.
 </p>
 <p>Try changing the mass threshold or selecting another species, then
@@ -2290,8 +2893,8 @@ rerun the section and inspect both the values and the assertion. Do not
 infer a successful transformation merely from seeing an object name or
 from a silent <code>stopifnot()</code>.</p>
 </div>
-<div id="short-glossary" class="section level2" number="13">
-<h2><span class="header-section-number">13</span> Short glossary</h2>
+<div id="short-glossary" class="section level2" number="14">
+<h2><span class="header-section-number">14</span> Short glossary</h2>
 <ul>
 <li><strong>H2OFrame:</strong> data stored in an H2O cluster, accessed
 through an R handle.</li>
@@ -2307,8 +2910,8 @@ stops the document build.</li>
 one right-hand record.</li>
 </ul>
 </div>
-<div id="data-provenance" class="section level2" number="14">
-<h2><span class="header-section-number">14</span> Data provenance</h2>
+<div id="data-provenance" class="section level2" number="15">
+<h2><span class="header-section-number">15</span> Data provenance</h2>
 <p>Data: Horst AM, Hill AP, Gorman KB (2020), <em>palmerpenguins: Palmer
 Archipelago (Antarctica) penguin data</em>, <a href="https://doi.org/10.5281/zenodo.3960218">doi:10.5281/zenodo.3960218</a>.
 The data are available under CC0. Measurements were collected by Kristen
@@ -2316,6 +2919,9 @@ Gorman and Palmer Station LTER. The research description is Gorman KB,
 Williams TD, Fraser WR (2014), <a href="https://doi.org/10.1371/journal.pone.0090081">doi:10.1371/journal.pone.0090081</a>.
 The bundled CSV’s source, retrieval date and SHA-256 are recorded in
 <code>system.file(&quot;extdata&quot;, &quot;PROVENANCE.md&quot;, package = &quot;h2oplyr&quot;)</code>.</p>
+<p>The synthetic <code>windows.csv</code> fixture was authored for
+h2oplyr and is covered by the package MIT license. It contains no
+personal or transactional records.</p>
 </div>
 
 

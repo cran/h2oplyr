@@ -1,3 +1,20 @@
+# h2oplyr 0.3.0
+
+- Support grouped h_mutate() with h_group_by() or per-call .by for direct
+  h_lag(), h_lead(), h_roll_mean(), h_min_rank() and h_row_number() calls.
+- Preserve input row order, isolate each group, and support multiple grouping
+  keys and missing keys. Keep existing groups; .by grouping is temporary.
+- Add right-aligned h_roll_mean() with explicit partial-window and NA policies,
+  numeric h_min_rank() with minimum ranks for ties and desc() support, and
+  the zero-argument mutation helper h_row_number().
+- Reject unsupported grouped expressions and overwriting grouping keys.
+  Grouped cumulative operations, grouped across/transmute, and optimized
+  large-window algorithms are not part of this release.
+- Add independent synthetic reference cases, boundary regressions, examples
+  for all 76 exports, and an English vignette section with visible grouped
+  window results and an executable transaction-shaped workflow.
+- Keep all row transformations on H2O, without new runtime dependencies.
+
 # h2oplyr 0.2.6
 
 - Remove the internal numeric seed assignment from h_slice_sample(). With
